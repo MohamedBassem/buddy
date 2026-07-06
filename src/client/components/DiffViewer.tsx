@@ -23,6 +23,8 @@ interface DiffViewerProps {
   file: DiffFile;
   threads: CommentThread[];
   annotations?: AiAnnotation[];
+  reviewedHunks?: Set<string>;
+  onToggleHunk?: (keys: string[]) => void;
   showAuthorBadges?: boolean;
   diffMode: DiffViewMode;
   reviewedFiles: Set<string>;
@@ -181,6 +183,8 @@ export const DiffViewer = memo(function DiffViewer({
   file,
   threads,
   annotations,
+  reviewedHunks,
+  onToggleHunk,
   showAuthorBadges = false,
   diffMode,
   reviewedFiles,
@@ -340,6 +344,8 @@ export const DiffViewer = memo(function DiffViewer({
     file,
     threads,
     annotations,
+    reviewedHunks,
+    onToggleHunk,
     showAuthorBadges,
     diffMode,
     syntaxTheme,

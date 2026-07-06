@@ -43,6 +43,8 @@ import { useGitHubReview } from './github/useGitHubReview';
 import { useDiffComments } from './hooks/useDiffComments';
 import { useExpandedLines, type MergedChunk } from './hooks/useExpandedLines';
 import { useFileWatch } from './hooks/useFileWatch';
+import { useReviewedHunks } from './hooks/useReviewedHunks';
+import { allHunkKeys } from './utils/hunkCoverage';
 import { useKeyboardNavigation } from './hooks/useKeyboardNavigation';
 import { useLazyDiffRendering } from './hooks/useLazyDiffRendering';
 import { useViewedFiles } from './hooks/useViewedFiles';
@@ -700,6 +702,24 @@ function App() {
   }, [aiAnnotations, aiEnabledKinds]);
 
   const EMPTY_ANNOTATIONS = useMemo(() => [] as typeof aiAnnotations, []);
+
+  // Hunk-level coverage ledger (M5): persisted per (repo, comparison).
+  const { reviewedHunks, toggleHunks: toggleReviewedHunks } = useReviewedHunks(commentsContextKey);
+  const allHunkKeyList = useMemo(() => (diffData ? allHunkKeys(diffData.files) : []), [diffData]);
+  const reviewedHunkCount = useMemo(
+    () => allHunkKeyList.filter((key) => reviewedHunks.has(key)).length,
+    [allHunkKeyList, reviewedHunks],
+  );
+  const totalHunkCount = allHunkKeyList.length;
+  const unreviewedHunkCount = totalHunkCount - reviewedHunkCount;
+
+  // Files whose diff changed since the reviewer last viewed them, in diff order
+  // (for "jump to first" in the review banner).
+  const changedSinceViewedList = useMemo(
+    () =>
+      diffData?.files.filter((f) => changedSinceViewedFiles.has(f.path)).map((f) => f.path) ?? [],
+    [diffData, changedSinceViewedFiles],
+  );
 
   // Track which file the mouse is over so `v` works without a cursor
   const hoveredFileIndexRef = useRef<number | null>(null);
@@ -1386,6 +1406,12 @@ function App() {
                   {viewedFiles.size === diffData.files.length
                     ? 'All diffs difit-ed!'
                     : `${viewedFiles.size} / ${diffData.files.length} files viewed`}
+                  {totalHunkCount > 0 && (
+                    <span className="text-github-text-muted">
+                      {' · '}
+                      {reviewedHunkCount}/{totalHunkCount} hunks
+                    </span>
+                  )}
                   <SparkleAnimation isActive={showSparkles} />
                 </div>
                 <div
@@ -1552,6 +1578,7 @@ function App() {
               annotationStatus={aiAnnotationStatus}
               enabledKinds={aiEnabledKinds}
               onToggleKind={toggleAiKind}
+              changedSinceViewed={changedSinceViewedList}
             />
             {diffData.files.map((file, fileIndex) => {
               const fileThreads = threadsByFile.get(file.path) ?? EMPTY_COMMENT_THREADS;
@@ -1601,6 +1628,8 @@ function App() {
                         file={file}
                         threads={fileThreads}
                         annotations={annotationsByFile.get(file.path) ?? EMPTY_ANNOTATIONS}
+                        reviewedHunks={reviewedHunks}
+                        onToggleHunk={toggleReviewedHunks}
                         showAuthorBadges={showAuthorBadges}
                         diffMode={diffMode}
                         reviewedFiles={viewedFiles}
@@ -1710,6 +1739,7 @@ function App() {
             unreviewedFiles={
               diffData?.files.filter((f) => !viewedFiles.has(f.path)).map((f) => f.path) ?? []
             }
+            unreviewedHunkCount={unreviewedHunkCount}
           />
         )}
       </div>

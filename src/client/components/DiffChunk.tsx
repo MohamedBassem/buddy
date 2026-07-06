@@ -1,4 +1,4 @@
-import { Sparkles } from 'lucide-react';
+import { Sparkles, Check } from 'lucide-react';
 import React, { useState, useEffect, useCallback, useMemo, memo } from 'react';
 
 import { type AiAnnotation } from '../../types/ai';
@@ -61,6 +61,9 @@ interface DiffChunkProps {
   onCommentTriggerHandled?: () => void;
   filename?: string;
   onOpenInEditor?: (filePath: string, lineNumber: number) => void;
+  /** Coverage ledger: whether this hunk is marked reviewed, and a toggle. */
+  hunkReviewed?: boolean;
+  onToggleHunkReviewed?: () => void;
 }
 
 export const DiffChunk = memo(function DiffChunk({
@@ -84,6 +87,8 @@ export const DiffChunk = memo(function DiffChunk({
   onCommentTriggerHandled,
   filename,
   onOpenInEditor,
+  hunkReviewed = false,
+  onToggleHunkReviewed,
 }: DiffChunkProps) {
   const [startLine, setStartLine] = useState<number | null>(null);
   const [endLine, setEndLine] = useState<number | null>(null);
@@ -353,10 +358,31 @@ export const DiffChunk = memo(function DiffChunk({
     setShowChat(false);
   };
 
+  const canAskBuddy = Boolean(filename) && chatAnchor.line > 0;
+  const reviewedToggle = onToggleHunkReviewed ? (
+    <label
+      className={`ml-auto inline-flex items-center gap-1.5 text-xs cursor-pointer ${
+        hunkReviewed
+          ? 'text-github-accent'
+          : 'text-github-text-muted hover:text-github-text-primary'
+      }`}
+      title={hunkReviewed ? 'Mark this hunk as not reviewed' : 'Mark this hunk reviewed'}
+    >
+      <input
+        type="checkbox"
+        checked={hunkReviewed}
+        onChange={onToggleHunkReviewed}
+        className="sr-only"
+      />
+      <Check size={13} className={hunkReviewed ? '' : 'opacity-50'} />
+      {hunkReviewed ? 'Reviewed' : 'Mark reviewed'}
+    </label>
+  ) : null;
+
   const chatFooter =
-    filename && chatAnchor.line > 0 ? (
+    canAskBuddy || reviewedToggle ? (
       <div className="border-t border-github-border px-4 py-2 bg-github-bg-primary">
-        {showChat ? (
+        {showChat && canAskBuddy && filename ? (
           <HunkChatPanel
             filePath={filename}
             side={chatAnchor.side}
@@ -366,14 +392,19 @@ export const DiffChunk = memo(function DiffChunk({
             onPromoteToComment={handlePromoteToComment}
           />
         ) : (
-          <button
-            type="button"
-            onClick={() => setShowChat(true)}
-            className="inline-flex items-center gap-1.5 text-xs text-github-text-muted hover:text-github-text-primary cursor-pointer"
-          >
-            <Sparkles size={13} style={{ color: '#a371f7' }} />
-            Ask buddy about this hunk
-          </button>
+          <div className="flex items-center gap-4">
+            {canAskBuddy && (
+              <button
+                type="button"
+                onClick={() => setShowChat(true)}
+                className="inline-flex items-center gap-1.5 text-xs text-github-text-muted hover:text-github-text-primary cursor-pointer"
+              >
+                <Sparkles size={13} style={{ color: '#a371f7' }} />
+                Ask buddy about this hunk
+              </button>
+            )}
+            {reviewedToggle}
+          </div>
         )}
       </div>
     ) : null;

@@ -2,6 +2,7 @@ import React from 'react';
 
 import { DiffChunk } from '../components/DiffChunk';
 import { ExpandButton } from '../components/ExpandButton';
+import { hunkKey } from '../utils/hunkCoverage';
 
 import type { DiffViewerBodyProps } from './types';
 
@@ -9,6 +10,8 @@ export function TextDiffViewer({
   file,
   threads,
   annotations,
+  reviewedHunks,
+  onToggleHunk,
   showAuthorBadges,
   diffMode,
   syntaxTheme,
@@ -90,6 +93,14 @@ export function TextDiffViewer({
         const lastOriginalIndex =
           mergedChunk.originalIndices[mergedChunk.originalIndices.length - 1] ?? 0;
 
+        // Coverage keys for the original hunks this displayed chunk covers.
+        const hunkKeys = mergedChunk.originalIndices
+          .map((i) => file.chunks[i])
+          .filter((chunk): chunk is (typeof file.chunks)[number] => chunk !== undefined)
+          .map((chunk) => hunkKey(file.path, chunk));
+        const hunkReviewed =
+          hunkKeys.length > 0 && hunkKeys.every((key) => reviewedHunks?.has(key));
+
         return (
           <React.Fragment key={mergedIndex}>
             {isFirstMerged &&
@@ -124,6 +135,10 @@ export function TextDiffViewer({
                 }
                 onCommentTriggerHandled={onCommentTriggerHandled}
                 filename={file.path}
+                hunkReviewed={hunkReviewed}
+                onToggleHunkReviewed={
+                  onToggleHunk && hunkKeys.length > 0 ? () => onToggleHunk(hunkKeys) : undefined
+                }
               />
             </div>
 

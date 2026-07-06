@@ -19,6 +19,8 @@ interface SubmitReviewModalProps {
   submit: SubmitReviewFn;
   /** Changed files not yet marked reviewed — surfaced as a coverage nudge. */
   unreviewedFiles: string[];
+  /** Hunks not yet marked reviewed. */
+  unreviewedHunkCount: number;
 }
 
 type EventChoice = 'PENDING' | ReviewEvent;
@@ -53,6 +55,7 @@ export function SubmitReviewModal({
   threads,
   submit,
   unreviewedFiles,
+  unreviewedHunkCount,
 }: SubmitReviewModalProps) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set(threads.map((t) => t.id)));
   const [body, setBody] = useState('');
@@ -140,7 +143,7 @@ export function SubmitReviewModal({
             </div>
           ) : (
             <>
-              {unreviewedFiles.length > 0 && (
+              {(unreviewedFiles.length > 0 || unreviewedHunkCount > 0) && (
                 <div
                   className="flex items-start gap-2 rounded-md border px-3 py-2 text-sm"
                   style={{
@@ -152,16 +155,25 @@ export function SubmitReviewModal({
                   <AlertTriangle size={15} className="mt-0.5 shrink-0 text-github-warning" />
                   <div className="min-w-0">
                     <div className="text-github-text-primary">
-                      {unreviewedFiles.length} changed file
-                      {unreviewedFiles.length === 1 ? '' : 's'} not yet marked reviewed.
+                      {unreviewedFiles.length > 0
+                        ? `${unreviewedFiles.length} changed file${
+                            unreviewedFiles.length === 1 ? '' : 's'
+                          } not yet marked reviewed${
+                            unreviewedHunkCount > 0 ? ` (${unreviewedHunkCount} hunks)` : ''
+                          }.`
+                        : `${unreviewedHunkCount} hunk${
+                            unreviewedHunkCount === 1 ? '' : 's'
+                          } not yet marked reviewed.`}
                     </div>
-                    <div
-                      className="text-xs text-github-text-muted truncate"
-                      title={unreviewedFiles.join(', ')}
-                    >
-                      {unreviewedFiles.slice(0, 4).join(', ')}
-                      {unreviewedFiles.length > 4 ? `, +${unreviewedFiles.length - 4} more` : ''}
-                    </div>
+                    {unreviewedFiles.length > 0 && (
+                      <div
+                        className="text-xs text-github-text-muted truncate"
+                        title={unreviewedFiles.join(', ')}
+                      >
+                        {unreviewedFiles.slice(0, 4).join(', ')}
+                        {unreviewedFiles.length > 4 ? `, +${unreviewedFiles.length - 4} more` : ''}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

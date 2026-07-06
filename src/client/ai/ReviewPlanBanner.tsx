@@ -1,4 +1,4 @@
-import { Sparkles, ChevronDown, ChevronRight, AlertCircle } from 'lucide-react';
+import { Sparkles, ChevronDown, ChevronRight, AlertCircle, History } from 'lucide-react';
 import { useState } from 'react';
 
 import {
@@ -19,6 +19,8 @@ interface ReviewPlanBannerProps {
   annotationStatus: AiPlanStatus;
   enabledKinds: Set<AiAnnotationKind>;
   onToggleKind: (kind: AiAnnotationKind) => void;
+  /** Files whose diff changed since the reviewer last marked them viewed. */
+  changedSinceViewed: string[];
 }
 
 const ACCENT = '#a371f7'; // buddy AI accent — visually distinct from green comments.
@@ -45,6 +47,7 @@ export function ReviewPlanBanner({
   annotationStatus,
   enabledKinds,
   onToggleKind,
+  changedSinceViewed,
 }: ReviewPlanBannerProps) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -186,6 +189,26 @@ export function ReviewPlanBanner({
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {changedSinceViewed.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-github-border flex items-center gap-2 flex-wrap">
+              <History size={14} className="text-github-warning shrink-0" />
+              <span className="text-xs text-github-text-secondary">
+                {changedSinceViewed.length} file{changedSinceViewed.length === 1 ? '' : 's'} changed
+                since your last pass.
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const first = changedSinceViewed[0];
+                  if (first) onSelectFile(first);
+                }}
+                className="text-xs px-2 py-0.5 rounded border border-github-border text-github-text-secondary hover:text-github-text-primary hover:bg-github-bg-tertiary cursor-pointer"
+              >
+                Jump to first
+              </button>
             </div>
           )}
         </div>

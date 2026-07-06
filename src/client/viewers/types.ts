@@ -11,6 +11,9 @@ export type DiffViewerBodyProps = {
   threads: CommentThread[];
   /** AI annotations anchored within this file (already filtered by kind). */
   annotations?: AiAnnotation[];
+  /** Hunk-coverage ledger: keys marked reviewed, and a toggle. */
+  reviewedHunks?: Set<string>;
+  onToggleHunk?: (keys: string[]) => void;
   showAuthorBadges?: boolean;
   diffMode: DiffViewMode;
   syntaxTheme?: AppearanceSettings['syntaxTheme'];
