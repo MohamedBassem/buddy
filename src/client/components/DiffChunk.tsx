@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, memo } from 'react';
 
+import { type AiAnnotation } from '../../types/ai';
 import {
   type DiffChunk as DiffChunkType,
   type DiffLine,
@@ -9,6 +10,7 @@ import {
   type DiffViewMode,
 } from '../../types/diff';
 import { DEFAULT_DIFF_VIEW_MODE } from '../../utils/diffMode';
+import { AnnotationCard } from '../ai/AnnotationCard';
 import { type CursorPosition } from '../hooks/keyboardNavigation';
 import {
   computeWordLevelDiff,
@@ -26,6 +28,7 @@ interface DiffChunkProps {
   chunk: DiffChunkType;
   chunkIndex: number;
   threads: CommentThread[];
+  annotations?: AiAnnotation[];
   showAuthorBadges?: boolean;
   onAddComment: (
     line: LineNumber,
@@ -62,6 +65,7 @@ export const DiffChunk = memo(function DiffChunk({
   chunk,
   chunkIndex,
   threads,
+  annotations,
   showAuthorBadges = false,
   onAddComment,
   onGenerateThreadPrompt,
@@ -200,6 +204,11 @@ export const DiffChunk = memo(function DiffChunk({
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   };
 
+  const getAnnotationsForLine = (lineNumber: number, side: DiffSide): AiAnnotation[] =>
+    (annotations ?? []).filter(
+      (annotation) => annotation.anchor.side === side && annotation.anchor.line === lineNumber,
+    );
+
   const getCommentLayout = (line: DiffLine): 'left' | 'right' | 'full' => {
     // In unified mode, always use full width for comments
     if (mode === 'unified') {
@@ -322,6 +331,7 @@ export const DiffChunk = memo(function DiffChunk({
         chunk={chunk}
         chunkIndex={chunkIndex}
         threads={threads}
+        annotations={annotations}
         showAuthorBadges={showAuthorBadges}
         onAddComment={onAddComment}
         onGenerateThreadPrompt={onGenerateThreadPrompt}
@@ -362,6 +372,9 @@ export const DiffChunk = memo(function DiffChunk({
             const commentSide: DiffSide = line.type === 'delete' ? 'old' : 'new';
             const lineThreads = commentLineNumber
               ? getThreadsForLine(commentLineNumber, commentSide)
+              : [];
+            const lineAnnotations = commentLineNumber
+              ? getAnnotationsForLine(commentLineNumber, commentSide)
               : [];
             // Generate ID for all lines to match the format used in useKeyboardNavigation
             const lineId = `file-${fileIndex}-chunk-${chunkIndex}-line-${index}`;
@@ -424,6 +437,29 @@ export const DiffChunk = memo(function DiffChunk({
                     onLineClick?.(fileIndex, chunkIndex, index, side);
                   }}
                 />
+
+                {lineAnnotations.map((annotation) => {
+                  const layout = getCommentLayout(line);
+                  return (
+                    <tr key={annotation.id} className="bg-github-bg-primary">
+                      <td colSpan={3} className="p-0 border-t border-github-border">
+                        <div
+                          className={`flex ${
+                            layout === 'left'
+                              ? 'justify-start'
+                              : layout === 'right'
+                                ? 'justify-end'
+                                : 'justify-center'
+                          }`}
+                        >
+                          <div className={`${layout === 'full' ? 'w-full' : 'w-1/2'} m-2 mx-4`}>
+                            <AnnotationCard annotation={annotation} />
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
 
                 {lineThreads.map((thread) => {
                   const layout = getCommentLayout(line);

@@ -8,6 +8,7 @@ import type { DiffViewerBodyProps } from './types';
 export function TextDiffViewer({
   file,
   threads,
+  annotations,
   showAuthorBadges,
   diffMode,
   syntaxTheme,
@@ -102,6 +103,7 @@ export function TextDiffViewer({
                 chunk={mergedChunk}
                 chunkIndex={mergedIndex}
                 threads={threads}
+                annotations={annotations}
                 showAuthorBadges={showAuthorBadges}
                 onAddComment={onAddComment}
                 onGenerateThreadPrompt={onGenerateThreadPrompt}

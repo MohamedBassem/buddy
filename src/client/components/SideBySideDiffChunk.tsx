@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 
+import { type AiAnnotation } from '../../types/ai';
 import {
   type DiffChunk as DiffChunkType,
   type DiffLine,
@@ -8,6 +9,7 @@ import {
   type LineNumber,
   type LineSelection,
 } from '../../types/diff';
+import { AnnotationCard } from '../ai/AnnotationCard';
 import { type CursorPosition } from '../hooks/keyboardNavigation';
 import {
   computeWordLevelDiff,
@@ -28,6 +30,7 @@ interface SideBySideDiffChunkProps {
   chunk: DiffChunkType;
   chunkIndex: number;
   threads: CommentThread[];
+  annotations?: AiAnnotation[];
   showAuthorBadges?: boolean;
   onAddComment: (
     line: LineNumber,
@@ -95,6 +98,7 @@ export function SideBySideDiffChunk({
   chunk,
   chunkIndex,
   threads,
+  annotations,
   showAuthorBadges = false,
   onAddComment,
   onGenerateThreadPrompt,
@@ -407,6 +411,13 @@ export function SideBySideDiffChunk({
               ? getThreadsForLine(sideLine.newLineNumber, 'new')
               : [];
             const allThreads = [...oldThreads, ...newThreads];
+            const lineAnnotations = (annotations ?? []).filter((annotation) => {
+              const { side, line } = annotation.anchor;
+              return (
+                (side === 'old' && sideLine.oldLineNumber === line) ||
+                (side === 'new' && sideLine.newLineNumber === line)
+              );
+            });
 
             // Use the stored original indices
             const oldLineOriginalIndex = sideLine.oldLineOriginalIndex ?? -1;
@@ -663,6 +674,23 @@ export function SideBySideDiffChunk({
                     )}
                   </td>
                 </tr>
+
+                {/* AI annotations row */}
+                {lineAnnotations.length > 0 && (
+                  <tr className="bg-github-bg-primary">
+                    <td colSpan={4} className="p-0 border-t border-github-border">
+                      {lineAnnotations.map((annotation) => (
+                        <div key={annotation.id} className="flex justify-center">
+                          <div className="w-full">
+                            <div className="m-2 mx-3">
+                              <AnnotationCard annotation={annotation} />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </td>
+                  </tr>
+                )}
 
                 {/* Comment threads row */}
                 {allThreads.length > 0 && (

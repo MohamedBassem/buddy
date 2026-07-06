@@ -1,7 +1,12 @@
 import { Sparkles, ChevronDown, ChevronRight, AlertCircle } from 'lucide-react';
 import { useState } from 'react';
 
-import { type AiPlanStatus, type ReviewPlan } from '../../types/ai';
+import {
+  type AiAnnotation,
+  type AiAnnotationKind,
+  type AiPlanStatus,
+  type ReviewPlan,
+} from '../../types/ai';
 
 interface ReviewPlanBannerProps {
   status: AiPlanStatus;
@@ -10,9 +15,20 @@ interface ReviewPlanBannerProps {
   loading: boolean;
   /** Scroll the main diff to a file (chapter navigation). */
   onSelectFile: (filePath: string) => void;
+  annotations: AiAnnotation[];
+  annotationStatus: AiPlanStatus;
+  enabledKinds: Set<AiAnnotationKind>;
+  onToggleKind: (kind: AiAnnotationKind) => void;
 }
 
 const ACCENT = '#a371f7'; // buddy AI accent — visually distinct from green comments.
+
+const KIND_LABELS: Record<AiAnnotationKind, string> = {
+  attention: 'Attention',
+  context: 'Context',
+  'blast-radius': 'Blast radius',
+};
+const KIND_ORDER: AiAnnotationKind[] = ['attention', 'context', 'blast-radius'];
 
 /**
  * The PR walkthrough banner above the diff: buddy's summary of what the PR does
@@ -25,8 +41,18 @@ export function ReviewPlanBanner({
   message,
   loading,
   onSelectFile,
+  annotations,
+  annotationStatus,
+  enabledKinds,
+  onToggleKind,
 }: ReviewPlanBannerProps) {
   const [collapsed, setCollapsed] = useState(false);
+
+  const kindCounts = KIND_ORDER.map((kind) => ({
+    kind,
+    count: annotations.filter((a) => a.kind === kind).length,
+  }));
+  const hasAnnotations = annotations.length > 0;
 
   // Nothing useful to show yet and no work happening: render nothing.
   if (status === 'unavailable' && !message) {
@@ -125,6 +151,42 @@ export function ReviewPlanBanner({
                 ))}
               </ol>
             </>
+          )}
+
+          {(hasAnnotations || annotationStatus === 'running') && (
+            <div className="mt-3 pt-3 border-t border-github-border">
+              <div className="flex items-center flex-wrap gap-2">
+                <span className="text-xs text-github-text-muted mr-1">
+                  {annotationStatus === 'running' && !hasAnnotations
+                    ? 'Finding what deserves attention…'
+                    : 'Annotations:'}
+                </span>
+                {kindCounts.map(({ kind, count }) => {
+                  const on = enabledKinds.has(kind);
+                  return (
+                    <button
+                      key={kind}
+                      type="button"
+                      onClick={() => onToggleKind(kind)}
+                      disabled={count === 0}
+                      className="text-xs px-2 py-0.5 rounded-full border transition-colors disabled:opacity-40 disabled:cursor-default cursor-pointer"
+                      style={{
+                        color: on ? ACCENT : 'var(--color-github-text-muted)',
+                        borderColor: on ? `${ACCENT}66` : 'var(--color-github-border)',
+                        backgroundColor: on ? `${ACCENT}1a` : 'transparent',
+                      }}
+                      title={
+                        on
+                          ? `Hide ${KIND_LABELS[kind]} annotations`
+                          : `Show ${KIND_LABELS[kind]} annotations`
+                      }
+                    >
+                      {KIND_LABELS[kind]} {count > 0 ? count : ''}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           )}
         </div>
       )}

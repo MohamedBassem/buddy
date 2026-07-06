@@ -574,12 +574,28 @@ function App() {
   const aiLoading = useAiStore((s) => s.loading);
   const fetchAiPlan = useAiStore((s) => s.fetchPlan);
   const resetAiPlan = useAiStore((s) => s.reset);
+  const aiAnnotations = useAiStore((s) => s.annotations);
+  const aiAnnotationStatus = useAiStore((s) => s.annotationStatus);
+  const aiEnabledKinds = useAiStore((s) => s.enabledKinds);
+  const fetchAiAnnotations = useAiStore((s) => s.fetchAnnotations);
+  const toggleAiKind = useAiStore((s) => s.toggleKind);
+
+  const handleAiUpdate = useCallback(
+    (type: 'aiPlanReady' | 'aiAnnotationsChanged') => {
+      if (type === 'aiAnnotationsChanged') {
+        void fetchAiAnnotations();
+      } else {
+        void fetchAiPlan();
+      }
+    },
+    [fetchAiPlan, fetchAiAnnotations],
+  );
 
   // File watch for reload functionality - initialize with callback
   const { shouldReload, reload, watchState } = useFileWatch(
     handleWatchReload,
     handleCommentsChanged,
-    fetchAiPlan,
+    handleAiUpdate,
   );
 
   // A stable, order-independent signature of the current diff. Changes when the
@@ -594,13 +610,15 @@ function App() {
     return `${diffData.repositoryId ?? 'default'}:${sig}`;
   }, [diffData]);
 
-  // Kick the AI prep pass when the diff first loads and whenever its content
-  // changes. The server caches by head SHA, so a repeat call is cheap.
+  // Kick the AI prep pass and annotation pass when the diff first loads and
+  // whenever its content changes. The server caches by head SHA, so a repeat
+  // call is cheap.
   useEffect(() => {
     if (!aiDiffSignature) return;
     resetAiPlan();
     void fetchAiPlan();
-  }, [aiDiffSignature, fetchAiPlan, resetAiPlan]);
+    void fetchAiAnnotations();
+  }, [aiDiffSignature, fetchAiPlan, fetchAiAnnotations, resetAiPlan]);
 
   // Re-sort the diff files in place to match the plan's narrative order. Guarded
   // by an order comparison so it applies once per plan and never loops.
@@ -659,6 +677,23 @@ function App() {
     }
     return set;
   }, [aiPlan]);
+
+  // AI annotations grouped by file, filtered to the kinds the reviewer left on.
+  const annotationsByFile = useMemo(() => {
+    const map = new Map<string, typeof aiAnnotations>();
+    for (const annotation of aiAnnotations) {
+      if (!aiEnabledKinds.has(annotation.kind)) continue;
+      const list = map.get(annotation.anchor.filePath);
+      if (list) {
+        list.push(annotation);
+      } else {
+        map.set(annotation.anchor.filePath, [annotation]);
+      }
+    }
+    return map;
+  }, [aiAnnotations, aiEnabledKinds]);
+
+  const EMPTY_ANNOTATIONS = useMemo(() => [] as typeof aiAnnotations, []);
 
   // Track which file the mouse is over so `v` works without a cursor
   const hoveredFileIndexRef = useRef<number | null>(null);
@@ -1496,6 +1531,10 @@ function App() {
               message={aiMessage}
               loading={aiLoading}
               onSelectFile={scrollFileIntoDiffContainer}
+              annotations={aiAnnotations}
+              annotationStatus={aiAnnotationStatus}
+              enabledKinds={aiEnabledKinds}
+              onToggleKind={toggleAiKind}
             />
             {diffData.files.map((file, fileIndex) => {
               const fileThreads = threadsByFile.get(file.path) ?? EMPTY_COMMENT_THREADS;
@@ -1544,6 +1583,7 @@ function App() {
                       <DiffViewer
                         file={file}
                         threads={fileThreads}
+                        annotations={annotationsByFile.get(file.path) ?? EMPTY_ANNOTATIONS}
                         showAuthorBadges={showAuthorBadges}
                         diffMode={diffMode}
                         reviewedFiles={viewedFiles}

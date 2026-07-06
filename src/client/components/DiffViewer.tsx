@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 
+import { type AiAnnotation } from '../../types/ai';
 import {
   type DiffFile,
   type DiffViewMode,
@@ -21,6 +22,7 @@ import type { AppearanceSettings } from './SettingsModal';
 interface DiffViewerProps {
   file: DiffFile;
   threads: CommentThread[];
+  annotations?: AiAnnotation[];
   showAuthorBadges?: boolean;
   diffMode: DiffViewMode;
   reviewedFiles: Set<string>;
@@ -178,6 +180,7 @@ const getLastChunkIndex = (mergedChunks: MergedChunk[]): number | null => {
 export const DiffViewer = memo(function DiffViewer({
   file,
   threads,
+  annotations,
   showAuthorBadges = false,
   diffMode,
   reviewedFiles,
@@ -336,6 +339,7 @@ export const DiffViewer = memo(function DiffViewer({
   const viewerProps: DiffViewerBodyProps = {
     file,
     threads,
+    annotations,
     showAuthorBadges,
     diffMode,
     syntaxTheme,

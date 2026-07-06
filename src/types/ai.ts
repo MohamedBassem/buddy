@@ -113,4 +113,6 @@ export interface AiAnnotationsResponse {
   status: AiPlanStatus;
   annotations: AiAnnotation[];
   headSha?: string;
+  /** Human-readable reason when status is 'error' or 'unavailable'. */
+  message?: string;
 }

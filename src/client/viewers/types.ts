@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react';
 
+import type { AiAnnotation } from '../../types/ai';
 import type { CommentThread, DiffFile, DiffSide, DiffViewMode, LineNumber } from '../../types/diff';
 import type { AppearanceSettings } from '../components/SettingsModal';
 import type { CursorPosition } from '../hooks/keyboardNavigation';
@@ -8,6 +9,8 @@ import type { MergedChunk } from '../hooks/useExpandedLines';
 export type DiffViewerBodyProps = {
   file: DiffFile;
   threads: CommentThread[];
+  /** AI annotations anchored within this file (already filtered by kind). */
+  annotations?: AiAnnotation[];
   showAuthorBadges?: boolean;
   diffMode: DiffViewMode;
   syntaxTheme?: AppearanceSettings['syntaxTheme'];

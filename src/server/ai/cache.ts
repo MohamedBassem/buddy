@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from 'fs/promises';
 import { homedir } from 'os';
 import { join } from 'path';
 
-import { type AiRepoContext, type ReviewPlan } from '../../types/ai.js';
+import { type AiAnnotation, type AiRepoContext, type ReviewPlan } from '../../types/ai.js';
 
 /**
  * Disk cache for AI prep-pass results.
@@ -59,5 +59,44 @@ export async function writeCachedPlan(context: AiRepoContext, plan: ReviewPlan):
     await writeFile(planPath(context), JSON.stringify(plan, null, 2), 'utf8');
   } catch (error) {
     console.warn('⚠️  Failed to write AI plan cache:', error);
+  }
+}
+
+function annotationsPath(context: AiRepoContext): string {
+  return join(CACHE_DIR, `annotations-${cacheKey(context)}.json`);
+}
+
+interface CachedAnnotations {
+  headSha: string;
+  annotations: AiAnnotation[];
+}
+
+/** Returns cached annotations for this context, or null on miss/SHA mismatch. */
+export async function readCachedAnnotations(
+  context: AiRepoContext,
+): Promise<AiAnnotation[] | null> {
+  try {
+    const raw = await readFile(annotationsPath(context), 'utf8');
+    const parsed = JSON.parse(raw) as CachedAnnotations;
+    if (parsed.headSha !== context.headSha || !Array.isArray(parsed.annotations)) {
+      return null;
+    }
+    return parsed.annotations;
+  } catch {
+    return null;
+  }
+}
+
+/** Persists annotations for this context. Best-effort; never throws. */
+export async function writeCachedAnnotations(
+  context: AiRepoContext,
+  annotations: AiAnnotation[],
+): Promise<void> {
+  try {
+    await mkdir(CACHE_DIR, { recursive: true });
+    const payload: CachedAnnotations = { headSha: context.headSha, annotations };
+    await writeFile(annotationsPath(context), JSON.stringify(payload, null, 2), 'utf8');
+  } catch (error) {
+    console.warn('⚠️  Failed to write AI annotations cache:', error);
   }
 }

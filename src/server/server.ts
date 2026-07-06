@@ -232,7 +232,7 @@ export async function startServer(
     };
   }
 
-  const { planService } = registerAiRoutes(app, {
+  const aiServices = registerAiRoutes(app, {
     context: buildAiContext(initialDiffData),
     diff: initialDiffData,
     broadcast: (event) => fileWatcher.broadcast(event),
@@ -369,8 +369,8 @@ export async function startServer(
       Boolean(options.stdinDiff),
     );
 
-    // Keep the AI prep pass pointed at whatever diff the client is now viewing.
-    planService.setContext(buildAiContext(responseDiffData), responseDiffData);
+    // Keep the AI passes pointed at whatever diff the client is now viewing.
+    aiServices.setContext(buildAiContext(responseDiffData), responseDiffData);
 
     const baseCommitish =
       responseDiffData.baseCommitish ?? (options.stdinDiff ? 'stdin' : undefined);
