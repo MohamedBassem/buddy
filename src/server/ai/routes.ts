@@ -24,6 +24,11 @@ export interface AiServices {
   setContext: (context: AiRepoContext | null, diff: DiffResponse) => void;
 }
 
+/** Whether the `run` query param asks to actually run the (paid) agent pass. */
+function isRunRequested(run: unknown): boolean {
+  return run === '1' || run === 'true';
+}
+
 /**
  * All buddy AI HTTP surface. Registered from server.ts at a single injection
  * point so the fork stays easy to rebase onto upstream difit.
@@ -41,11 +46,12 @@ export function registerAiRoutes(app: Express, deps: AiRoutesDeps): AiServices {
   // right working directory even after the diff/head changes.
   let currentContext: AiRepoContext | null = deps.context;
 
-  // Kicks the prep pass on first call; returns cached plan when fresh. The
-  // client polls this once on load and again on the `aiPlanReady` SSE event.
-  app.get('/api/ai/plan', async (_req, res) => {
+  // Returns the cached plan for free; runs the (expensive) prep pass only when
+  // called with `?run=1` — a user button click. The client peeks on load and
+  // refreshes on the `aiPlanReady` SSE event.
+  app.get('/api/ai/plan', async (req, res) => {
     try {
-      const response = await planService.getPlan();
+      const response = await planService.getPlan(isRunRequested(req.query.run));
       res.json(response);
     } catch (error) {
       res.status(500).json({
@@ -55,11 +61,11 @@ export function registerAiRoutes(app: Express, deps: AiRoutesDeps): AiServices {
     }
   });
 
-  // Anchored annotations (attention / context / blast-radius). Kicked on first
-  // call; refreshed on the `aiAnnotationsChanged` SSE event.
-  app.get('/api/ai/annotations', async (_req, res) => {
+  // Anchored annotations (attention / context / blast-radius). Same lazy
+  // contract as the plan: cached loads free, `?run=1` triggers the pass.
+  app.get('/api/ai/annotations', async (req, res) => {
     try {
-      const response = await annotationService.getAnnotations();
+      const response = await annotationService.getAnnotations(isRunRequested(req.query.run));
       res.json(response);
     } catch (error) {
       res.status(500).json({

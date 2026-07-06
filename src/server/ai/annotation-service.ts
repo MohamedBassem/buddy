@@ -61,7 +61,11 @@ export class AnnotationService {
     };
   }
 
-  async getAnnotations(): Promise<AiAnnotationsResponse> {
+  /**
+   * Cached annotations always load for free; the agent pass runs only when
+   * `trigger` is set (an explicit user request). Mirrors PlanService.getPlan.
+   */
+  async getAnnotations(trigger = false): Promise<AiAnnotationsResponse> {
     const config = getAiConfig();
     if (!config.enabled) {
       this.status = 'unavailable';
@@ -81,6 +85,25 @@ export class AnnotationService {
       return this.inFlight;
     }
 
+    const cached = await readCachedAnnotations(this.context);
+    if (cached) {
+      this.annotations = cached;
+      this.status = 'ready';
+      this.message = undefined;
+      this.broadcast({
+        type: 'aiAnnotationsChanged',
+        headSha: this.context.headSha,
+        timestamp: new Date().toISOString(),
+      });
+      return this.response();
+    }
+
+    if (!trigger) {
+      this.status = 'idle';
+      this.message = undefined;
+      return this.response();
+    }
+
     this.inFlight = this.runPass(this.context, this.diff);
     try {
       return await this.inFlight;
@@ -93,19 +116,6 @@ export class AnnotationService {
     context: AiRepoContext,
     diff: DiffResponse,
   ): Promise<AiAnnotationsResponse> {
-    const cached = await readCachedAnnotations(context);
-    if (cached) {
-      this.annotations = cached;
-      this.status = 'ready';
-      this.message = undefined;
-      this.broadcast({
-        type: 'aiAnnotationsChanged',
-        headSha: context.headSha,
-        timestamp: new Date().toISOString(),
-      });
-      return this.response();
-    }
-
     this.status = 'running';
     this.message = undefined;
     this.abortController = new AbortController();

@@ -31,10 +31,15 @@ interface AiState {
   /** Which annotation kinds are currently shown. */
   enabledKinds: Set<AiAnnotationKind>;
 
-  /** Fetch the review plan from the server (kicks the prep pass if needed). */
-  fetchPlan: () => Promise<void>;
-  /** Fetch anchored annotations from the server (kicks the pass if needed). */
-  fetchAnnotations: () => Promise<void>;
+  /**
+   * Fetch the review plan. Without `trigger` this only loads a cached plan (no
+   * agent run); with `trigger` (a user click) it runs the prep pass.
+   */
+  fetchPlan: (trigger?: boolean) => Promise<void>;
+  /** Fetch anchored annotations. Same lazy contract as fetchPlan. */
+  fetchAnnotations: (trigger?: boolean) => Promise<void>;
+  /** Explicit user request: run both the plan and annotation passes now. */
+  prepare: () => Promise<void>;
   /** Show/hide a whole annotation kind. */
   toggleKind: (kind: AiAnnotationKind) => void;
   /** Clear all AI state, e.g. when the diff/head changes. */
@@ -51,13 +56,13 @@ export const useAiStore = create<AiState>((set, get) => ({
   annotations: [],
   enabledKinds: new Set(ALL_KINDS),
 
-  fetchPlan: async () => {
+  fetchPlan: async (trigger = false) => {
     if (get().loading) {
       return;
     }
     set({ loading: true });
     try {
-      const response = await fetch('/api/ai/plan');
+      const response = await fetch(`/api/ai/plan${trigger ? '?run=1' : ''}`);
       if (!response.ok) {
         throw new Error(`Plan request failed: ${response.status}`);
       }
@@ -77,13 +82,16 @@ export const useAiStore = create<AiState>((set, get) => ({
     }
   },
 
-  fetchAnnotations: async () => {
+  fetchAnnotations: async (trigger = false) => {
     if (get().annotationStatus === 'running') {
       return;
     }
-    set({ annotationStatus: 'running' });
+    // Optimistically show "running" only when we're actually kicking a pass.
+    if (trigger) {
+      set({ annotationStatus: 'running' });
+    }
     try {
-      const response = await fetch('/api/ai/annotations');
+      const response = await fetch(`/api/ai/annotations${trigger ? '?run=1' : ''}`);
       if (!response.ok) {
         throw new Error(`Annotations request failed: ${response.status}`);
       }
@@ -95,6 +103,10 @@ export const useAiStore = create<AiState>((set, get) => ({
     } catch {
       set({ annotationStatus: 'error', annotations: [] });
     }
+  },
+
+  prepare: async () => {
+    await Promise.all([get().fetchPlan(true), get().fetchAnnotations(true)]);
   },
 
   toggleKind: (kind) =>

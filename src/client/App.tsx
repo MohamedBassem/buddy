@@ -582,6 +582,7 @@ function App() {
   const aiAnnotationStatus = useAiStore((s) => s.annotationStatus);
   const aiEnabledKinds = useAiStore((s) => s.enabledKinds);
   const fetchAiAnnotations = useAiStore((s) => s.fetchAnnotations);
+  const prepareAi = useAiStore((s) => s.prepare);
   const toggleAiKind = useAiStore((s) => s.toggleKind);
 
   // GitHub write-back (only active when launched with --pr).
@@ -1579,6 +1580,7 @@ function App() {
               enabledKinds={aiEnabledKinds}
               onToggleKind={toggleAiKind}
               changedSinceViewed={changedSinceViewedList}
+              onPrepare={prepareAi}
             />
             {diffData.files.map((file, fileIndex) => {
               const fileThreads = threadsByFile.get(file.path) ?? EMPTY_COMMENT_THREADS;

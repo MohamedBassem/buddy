@@ -66,10 +66,12 @@ export class PlanService {
   }
 
   /**
-   * Return the plan, kicking the prep pass if needed. Idempotent: a second call
-   * while a pass is running joins the same run rather than starting another.
+   * Return the plan. Cached results (memory or disk) always load for free. The
+   * expensive agent pass runs only when `trigger` is set (a user button click) —
+   * on plain page load we peek the cache but never spend tokens unprompted.
+   * Idempotent: a call while a pass is running joins that run.
    */
-  async getPlan(): Promise<AiPlanResponse> {
+  async getPlan(trigger = false): Promise<AiPlanResponse> {
     const config = getAiConfig();
     if (!config.enabled) {
       this.status = 'unavailable';
@@ -94,6 +96,27 @@ export class PlanService {
       return this.inFlight;
     }
 
+    // Cheap cache peek on every call — a previously prepared diff loads instantly.
+    const cached = await readCachedPlan(this.context);
+    if (cached) {
+      this.plan = cached;
+      this.status = 'ready';
+      this.message = undefined;
+      this.broadcast({
+        type: 'aiPlanReady',
+        headSha: this.context.headSha,
+        timestamp: new Date().toISOString(),
+      });
+      return this.response();
+    }
+
+    if (!trigger) {
+      // Not cached and not explicitly requested: wait for the user.
+      this.status = 'idle';
+      this.message = undefined;
+      return this.response();
+    }
+
     this.inFlight = this.runPrepPass(this.context, this.diff);
     try {
       return await this.inFlight;
@@ -103,20 +126,6 @@ export class PlanService {
   }
 
   private async runPrepPass(context: AiRepoContext, diff: DiffResponse): Promise<AiPlanResponse> {
-    // Disk cache first — reopening a PR at the same head SHA is free.
-    const cached = await readCachedPlan(context);
-    if (cached) {
-      this.plan = cached;
-      this.status = 'ready';
-      this.message = undefined;
-      this.broadcast({
-        type: 'aiPlanReady',
-        headSha: context.headSha,
-        timestamp: new Date().toISOString(),
-      });
-      return this.response();
-    }
-
     this.status = 'running';
     this.message = undefined;
     this.abortController = new AbortController();

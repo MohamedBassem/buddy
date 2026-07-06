@@ -23,13 +23,13 @@ All fork code is isolated for easy rebasing onto upstream (`src/server/ai/`, `sr
 
 ### What's new
 
-- **Review plan** — on load, a prep-pass agent reads the diff _and the surrounding repo_ and produces a walkthrough: a PR summary banner, files regrouped into narrative **chapters** and re-sorted into review order, and mechanical files (renames, generated, formatting) auto-collapsed with a "mechanical" badge.
+- **Review plan** — click **Prepare review** and a prep-pass agent reads the diff _and the surrounding repo_ and produces a walkthrough: a PR summary banner, files regrouped into narrative **chapters** and re-sorted into review order, and mechanical files (renames, generated, formatting) auto-collapsed with a "mechanical" badge. (A previously prepared diff loads from cache automatically — no click, no wait.)
 - **Anchored annotations** — the agent flags _what deserves attention and why_ — `attention` / `context` / `blast-radius` notes pinned to specific diff lines, each with a confidence mark (`looked around` vs `inferred`) so you know whether it read surrounding code or just the hunk. Rendered inline beside your comments, visually distinct, with per-kind toggles. Never verdicts.
 - **Ask buddy (per-hunk chat)** — an "Ask buddy about this hunk" panel under every hunk. Questions stream a live answer, with the agent using read-only repo tools (`git log`/`blame`, `grep`, `gh api`) to look beyond the diff. "Add as draft comment" is the one bridge from an AI answer into your own comment thread.
 - **GitHub write-back** (`--pr` mode) — a **Submit to GitHub** flow maps your local comments to a GitHub review and posts it via the `gh` CLI. Defaults to a **pending draft** (nothing is published until you choose); you can also submit as comment / approve / request-changes.
 - **Coverage ledger** — a per-hunk **Mark reviewed** toggle (persisted per repo + comparison), an `N/M hunks` counter in the header, a "changed since your last pass" indicator, and a pre-submit guard that warns when you're about to submit a partly-reviewed PR.
 
-AI artifacts live in their own state and disk cache — they never enter difit's comment session. Results are cached under `~/.cache/buddy/ai/`, keyed by head SHA, so reopening the same diff is instant.
+The prep passes (plan + annotations) run only on an explicit **Prepare review** click, so opening a diff costs nothing by default. Results are cached under `~/.cache/buddy/ai/`, keyed by head SHA, so a diff you've already prepared loads automatically and instantly on reopen. AI artifacts live in their own state and disk cache — they never enter difit's comment session.
 
 ### Requirements & configuration (fork-only)
 

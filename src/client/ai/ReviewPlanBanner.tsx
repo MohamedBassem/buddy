@@ -21,6 +21,8 @@ interface ReviewPlanBannerProps {
   onToggleKind: (kind: AiAnnotationKind) => void;
   /** Files whose diff changed since the reviewer last marked them viewed. */
   changedSinceViewed: string[];
+  /** Run the prep pass (plan + annotations) on explicit user request. */
+  onPrepare: () => void;
 }
 
 const ACCENT = '#a371f7'; // buddy AI accent — visually distinct from green comments.
@@ -48,6 +50,7 @@ export function ReviewPlanBanner({
   enabledKinds,
   onToggleKind,
   changedSinceViewed,
+  onPrepare,
 }: ReviewPlanBannerProps) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -62,7 +65,11 @@ export function ReviewPlanBanner({
     return null;
   }
 
-  const isWorking = loading || status === 'running' || status === 'idle';
+  // The agent is actually running (or we're mid-request for it).
+  const isWorking = loading || status === 'running';
+  // No cached result and nothing running: awaiting an explicit "Prepare" click.
+  const isIdle = status === 'idle' && !loading;
+  const headerTitle = isWorking ? 'Preparing your review…' : plan ? 'Review plan' : 'AI review';
 
   return (
     <div
@@ -79,9 +86,7 @@ export function ReviewPlanBanner({
           style={{ color: ACCENT }}
           className={isWorking ? 'animate-pulse' : ''}
         />
-        <span className="text-sm font-semibold text-github-text-primary">
-          {isWorking ? 'Preparing your review…' : 'Review plan'}
-        </span>
+        <span className="text-sm font-semibold text-github-text-primary">{headerTitle}</span>
         {plan && plan.chapters.length > 0 && (
           <span className="text-xs text-github-text-muted">
             {plan.chapters.length} chapter{plan.chapters.length === 1 ? '' : 's'}
@@ -106,6 +111,27 @@ export function ReviewPlanBanner({
           {isWorking && !plan && (
             <div className="text-sm text-github-text-secondary py-1">
               Reading the diff and repository to order your review and flag what deserves attention.
+            </div>
+          )}
+
+          {isIdle && !plan && (
+            <div className="flex items-center gap-3 py-1">
+              <button
+                type="button"
+                onClick={onPrepare}
+                className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded cursor-pointer"
+                style={{
+                  color: ACCENT,
+                  backgroundColor: `${ACCENT}1a`,
+                  border: `1px solid ${ACCENT}66`,
+                }}
+              >
+                <Sparkles size={14} />
+                Prepare review with buddy
+              </button>
+              <span className="text-xs text-github-text-muted">
+                Orders the files, folds the noise, and flags what deserves attention.
+              </span>
             </div>
           )}
 
