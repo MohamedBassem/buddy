@@ -1707,6 +1707,9 @@ function App() {
             pr={githubPr}
             threads={threads}
             submit={submitGithubReview}
+            unreviewedFiles={
+              diffData?.files.filter((f) => !viewedFiles.has(f.path)).map((f) => f.path) ?? []
+            }
           />
         )}
       </div>
