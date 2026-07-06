@@ -1,3 +1,4 @@
+import { Sparkles } from 'lucide-react';
 import React, { useState, useEffect, useCallback, useMemo, memo } from 'react';
 
 import { type AiAnnotation } from '../../types/ai';
@@ -11,6 +12,7 @@ import {
 } from '../../types/diff';
 import { DEFAULT_DIFF_VIEW_MODE } from '../../utils/diffMode';
 import { AnnotationCard } from '../ai/AnnotationCard';
+import { HunkChatPanel } from '../ai/HunkChatPanel';
 import { type CursorPosition } from '../hooks/keyboardNavigation';
 import {
   computeWordLevelDiff,
@@ -92,6 +94,7 @@ export const DiffChunk = memo(function DiffChunk({
     lineNumber: LineNumber;
   } | null>(null);
   const [hoveredLine, setHoveredLine] = useState<number | null>(null);
+  const [showChat, setShowChat] = useState(false);
 
   // Handle comment trigger from keyboard navigation
   useEffect(() => {
@@ -324,30 +327,84 @@ export const DiffChunk = memo(function DiffChunk({
     return map;
   }, [chunk.lines]);
 
+  // Anchor for the per-hunk "Ask buddy" chat: the first real line of the hunk,
+  // preferring the new side.
+  const chatAnchor = ((): { side: DiffSide; line: number } => {
+    const newLine = chunk.lines.find((l) => l.newLineNumber !== undefined);
+    if (newLine?.newLineNumber !== undefined) {
+      return { side: 'new', line: newLine.newLineNumber };
+    }
+    const oldLine = chunk.lines.find((l) => l.oldLineNumber !== undefined);
+    return { side: 'old', line: oldLine?.oldLineNumber ?? 0 };
+  })();
+
+  const hunkText = chunk.lines
+    .map((l) => {
+      const marker =
+        l.type === 'add' ? '+' : l.type === 'delete' || l.type === 'remove' ? '-' : ' ';
+      return `${marker}${l.content}`;
+    })
+    .join('\n');
+
+  const handlePromoteToComment = (body: string) => {
+    if (chatAnchor.line > 0) {
+      void onAddComment(chatAnchor.line, body, undefined, chatAnchor.side);
+    }
+    setShowChat(false);
+  };
+
+  const chatFooter =
+    filename && chatAnchor.line > 0 ? (
+      <div className="border-t border-github-border px-4 py-2 bg-github-bg-primary">
+        {showChat ? (
+          <HunkChatPanel
+            filePath={filename}
+            side={chatAnchor.side}
+            line={chatAnchor.line}
+            hunkContent={hunkText}
+            onClose={() => setShowChat(false)}
+            onPromoteToComment={handlePromoteToComment}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowChat(true)}
+            className="inline-flex items-center gap-1.5 text-xs text-github-text-muted hover:text-github-text-primary cursor-pointer"
+          >
+            <Sparkles size={13} style={{ color: '#a371f7' }} />
+            Ask buddy about this hunk
+          </button>
+        )}
+      </div>
+    ) : null;
+
   // Use side-by-side component for split mode
   if (mode === 'split') {
     return (
-      <SideBySideDiffChunk
-        chunk={chunk}
-        chunkIndex={chunkIndex}
-        threads={threads}
-        annotations={annotations}
-        showAuthorBadges={showAuthorBadges}
-        onAddComment={onAddComment}
-        onGenerateThreadPrompt={onGenerateThreadPrompt}
-        onRemoveThread={onRemoveThread}
-        onReplyToThread={onReplyToThread}
-        onRemoveMessage={onRemoveMessage}
-        onUpdateMessage={onUpdateMessage}
-        onOpenInEditor={onOpenInEditor}
-        syntaxTheme={syntaxTheme}
-        cursor={cursor}
-        fileIndex={fileIndex}
-        onLineClick={onLineClick}
-        filename={filename}
-        commentTrigger={commentTrigger}
-        onCommentTriggerHandled={onCommentTriggerHandled}
-      />
+      <>
+        <SideBySideDiffChunk
+          chunk={chunk}
+          chunkIndex={chunkIndex}
+          threads={threads}
+          annotations={annotations}
+          showAuthorBadges={showAuthorBadges}
+          onAddComment={onAddComment}
+          onGenerateThreadPrompt={onGenerateThreadPrompt}
+          onRemoveThread={onRemoveThread}
+          onReplyToThread={onReplyToThread}
+          onRemoveMessage={onRemoveMessage}
+          onUpdateMessage={onUpdateMessage}
+          onOpenInEditor={onOpenInEditor}
+          syntaxTheme={syntaxTheme}
+          cursor={cursor}
+          fileIndex={fileIndex}
+          onLineClick={onLineClick}
+          filename={filename}
+          commentTrigger={commentTrigger}
+          onCommentTriggerHandled={onCommentTriggerHandled}
+        />
+        {chatFooter}
+      </>
     );
   }
 
@@ -527,6 +584,7 @@ export const DiffChunk = memo(function DiffChunk({
           })}
         </tbody>
       </table>
+      {chatFooter}
     </div>
   );
 });

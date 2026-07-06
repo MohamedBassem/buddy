@@ -59,10 +59,10 @@ interface AgentResult {
 
 /**
  * Run a one-shot agent task to completion and return its final text.
- * Throws on agent error (auth failures included — callers classify via
- * `isAuthError`).
+ * Streams intermediate text via `params.onText`. Throws on agent error (auth
+ * failures included — callers classify via `isAuthError`).
  */
-async function runAgent(params: RunAgentParams): Promise<AgentResult> {
+export async function runAgent(params: RunAgentParams): Promise<AgentResult> {
   const config = getAiConfig();
   const permissionMode: PermissionMode = 'bypassPermissions';
 
