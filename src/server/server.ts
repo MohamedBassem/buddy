@@ -30,6 +30,7 @@ import { type AiRepoContext } from '../types/ai.js';
 import { registerAiRoutes } from './ai/routes.js';
 import { FileWatcherService } from './file-watcher.js';
 import { GitDiffParser } from './git-diff.js';
+import { registerGitHubRoutes } from './github-routes.js';
 
 import {
   type BaseMode,
@@ -237,6 +238,8 @@ export async function startServer(
     diff: initialDiffData,
     broadcast: (event) => fileWatcher.broadcast(event),
   });
+
+  registerGitHubRoutes(app, { pr: options.pr });
 
   function parseRepositoryRelativePath(
     filepath: unknown,

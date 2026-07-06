@@ -686,10 +686,10 @@ describe('App Component - Diff Mode Persistence', () => {
     fireEvent.click(refreshButton);
 
     await waitFor(() => {
-      // 6 calls: initial /api/diff, /api/revisions, initial /api/comments sync,
+      // 7 calls: initial /api/diff, /api/revisions, initial /api/comments sync,
       // the AI review plan (/api/ai/plan), the AI annotations (/api/ai/annotations),
-      // and refresh /api/diff.
-      expect(mockGlobalFetch).toHaveBeenCalledTimes(6);
+      // the GitHub PR info probe (/api/github/info), and refresh /api/diff.
+      expect(mockGlobalFetch).toHaveBeenCalledTimes(7);
     });
 
     await waitFor(() => {

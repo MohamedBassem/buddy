@@ -38,6 +38,8 @@ import { useAppearanceSettings } from './hooks/useAppearanceSettings';
 import { ReviewPlanBanner } from './ai/ReviewPlanBanner';
 import { orderFilesByPlan, sameFileOrder } from './ai/ordering';
 import { useAiStore } from './ai/store';
+import { SubmitReviewModal } from './github/SubmitReviewModal';
+import { useGitHubReview } from './github/useGitHubReview';
 import { useDiffComments } from './hooks/useDiffComments';
 import { useExpandedLines, type MergedChunk } from './hooks/useExpandedLines';
 import { useFileWatch } from './hooks/useFileWatch';
@@ -579,6 +581,10 @@ function App() {
   const aiEnabledKinds = useAiStore((s) => s.enabledKinds);
   const fetchAiAnnotations = useAiStore((s) => s.fetchAnnotations);
   const toggleAiKind = useAiStore((s) => s.toggleKind);
+
+  // GitHub write-back (only active when launched with --pr).
+  const { pr: githubPr, submit: submitGithubReview } = useGitHubReview();
+  const [isSubmitReviewOpen, setIsSubmitReviewOpen] = useState(false);
 
   const handleAiUpdate = useCallback(
     (type: 'aiPlanReady' | 'aiAnnotationsChanged') => {
@@ -1364,6 +1370,17 @@ function App() {
                   onViewAll={() => setIsCommentsListOpen(true)}
                 />
               )}
+              {!isMobile && githubPr && (
+                <button
+                  type="button"
+                  onClick={() => setIsSubmitReviewOpen(true)}
+                  className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border border-github-border text-github-text-secondary hover:text-github-text-primary hover:bg-github-bg-tertiary cursor-pointer"
+                  title={`Submit a review to ${githubPr.owner}/${githubPr.repo} #${githubPr.number}`}
+                >
+                  <GitHubIcon style={{ height: '14px', width: '14px' }} />
+                  Submit to GitHub
+                </button>
+              )}
               <div className="flex flex-col gap-1 items-center">
                 <div className="text-xs relative">
                   {viewedFiles.size === diffData.files.length
@@ -1683,6 +1700,15 @@ function App() {
           onUpdateMessage={updateMessage}
           syntaxTheme={settings.syntaxTheme}
         />
+        {githubPr && (
+          <SubmitReviewModal
+            isOpen={isSubmitReviewOpen}
+            onClose={() => setIsSubmitReviewOpen(false)}
+            pr={githubPr}
+            threads={threads}
+            submit={submitGithubReview}
+          />
+        )}
       </div>
     </WordHighlightProvider>
   );
