@@ -473,7 +473,7 @@ describe('App Component - Heartbeat Connection', () => {
   });
 
   it('uses the direct API url for heartbeat when configured in development', async () => {
-    vi.stubEnv('VITE_DIFIT_API_URL', 'http://localhost:4969');
+    vi.stubEnv('VITE_BUDDY_API_URL', 'http://localhost:4969');
 
     renderApp();
 
@@ -686,8 +686,9 @@ describe('App Component - Diff Mode Persistence', () => {
     fireEvent.click(refreshButton);
 
     await waitFor(() => {
-      // 4 calls: initial /api/diff, /api/revisions, initial /api/comments sync, and refresh /api/diff
-      expect(mockGlobalFetch).toHaveBeenCalledTimes(4);
+      // 5 calls: initial /api/diff, /api/revisions, initial /api/comments sync,
+      // the AI review plan (/api/ai/plan), and refresh /api/diff.
+      expect(mockGlobalFetch).toHaveBeenCalledTimes(5);
     });
 
     await waitFor(() => {

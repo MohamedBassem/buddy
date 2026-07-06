@@ -35,6 +35,9 @@ import { SettingsModal } from './components/SettingsModal';
 import { SparkleAnimation } from './components/SparkleAnimation';
 import { WordHighlightProvider } from './contexts/WordHighlightContext';
 import { useAppearanceSettings } from './hooks/useAppearanceSettings';
+import { ReviewPlanBanner } from './ai/ReviewPlanBanner';
+import { orderFilesByPlan, sameFileOrder } from './ai/ordering';
+import { useAiStore } from './ai/store';
 import { useDiffComments } from './hooks/useDiffComments';
 import { useExpandedLines, type MergedChunk } from './hooks/useExpandedLines';
 import { useFileWatch } from './hooks/useFileWatch';
@@ -563,11 +566,99 @@ function App() {
     }
   }, [commentsContextKey, fetchServerThreads, replaceThreads]);
 
+  // AI review plan (chapters, ordering, PR summary, noise triage). Kept in its
+  // own store, separate from the comment session.
+  const aiPlan = useAiStore((s) => s.plan);
+  const aiStatus = useAiStore((s) => s.status);
+  const aiMessage = useAiStore((s) => s.message);
+  const aiLoading = useAiStore((s) => s.loading);
+  const fetchAiPlan = useAiStore((s) => s.fetchPlan);
+  const resetAiPlan = useAiStore((s) => s.reset);
+
   // File watch for reload functionality - initialize with callback
   const { shouldReload, reload, watchState } = useFileWatch(
     handleWatchReload,
     handleCommentsChanged,
+    fetchAiPlan,
   );
+
+  // A stable, order-independent signature of the current diff. Changes when the
+  // diff *content* changes (new files, edits) but NOT when we re-sort files by
+  // the plan — so re-sorting never re-triggers the prep pass.
+  const aiDiffSignature = useMemo(() => {
+    if (!diffData) return null;
+    const sig = diffData.files
+      .map((f) => `${f.path}:${f.additions}:${f.deletions}`)
+      .sort()
+      .join('|');
+    return `${diffData.repositoryId ?? 'default'}:${sig}`;
+  }, [diffData]);
+
+  // Kick the AI prep pass when the diff first loads and whenever its content
+  // changes. The server caches by head SHA, so a repeat call is cheap.
+  useEffect(() => {
+    if (!aiDiffSignature) return;
+    resetAiPlan();
+    void fetchAiPlan();
+  }, [aiDiffSignature, fetchAiPlan, resetAiPlan]);
+
+  // Re-sort the diff files in place to match the plan's narrative order. Guarded
+  // by an order comparison so it applies once per plan and never loops.
+  useEffect(() => {
+    if (!diffData || !aiPlan) return;
+    const ordered = orderFilesByPlan(diffData.files, aiPlan);
+    if (sameFileOrder(diffData.files, ordered)) return;
+    setDiffData({ ...diffData, files: ordered });
+    setDiffDataVersion((v) => v + 1);
+  }, [diffData, aiPlan]);
+
+  // Fold mechanical (rename-only / generated / formatting) files once the plan
+  // classifies them. Collapse-only: we do NOT mark them "viewed", so the
+  // coverage ledger stays honest about what the human actually looked at.
+  useEffect(() => {
+    if (!aiPlan) return;
+    const mechanical = Object.entries(aiPlan.triage)
+      .filter(([, cls]) => cls === 'mechanical')
+      .map(([path]) => path);
+    if (mechanical.length === 0) return;
+    setCollapsedFiles((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const path of mechanical) {
+        if (!next.has(path)) {
+          next.add(path);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [aiPlan]);
+
+  // Anchor each chapter header to the first of its files that is actually in
+  // the diff, so we can render a chapter title inline before that file.
+  const chapterHeaderByPath = useMemo(() => {
+    const map = new Map<string, { index: number; title: string; summary: string }>();
+    if (!aiPlan || !diffData) return map;
+    const present = new Set(diffData.files.map((f) => f.path));
+    aiPlan.chapters.forEach((chapter, index) => {
+      const firstPresent = chapter.files.find((path) => present.has(path));
+      if (firstPresent) {
+        map.set(firstPresent, { index, title: chapter.title, summary: chapter.summary });
+      }
+    });
+    return map;
+  }, [aiPlan, diffData]);
+
+  // Paths buddy classified as mechanical (rename-only / generated / formatting),
+  // surfaced as a badge on the (collapsed) file.
+  const mechanicalPaths = useMemo(() => {
+    const set = new Set<string>();
+    if (!aiPlan) return set;
+    for (const [path, cls] of Object.entries(aiPlan.triage)) {
+      if (cls === 'mechanical') set.add(path);
+    }
+    return set;
+  }, [aiPlan]);
 
   // Track which file the mouse is over so `v` works without a cursor
   const hoveredFileIndexRef = useRef<number | null>(null);
@@ -1356,6 +1447,7 @@ function App() {
                   onToggleReviewed={toggleFileReviewed}
                   onToggleFolderReviewed={toggleFolderReviewed}
                   selectedFileIndex={cursor?.fileIndex ?? null}
+                  mechanicalFiles={mechanicalPaths}
                 />
               </div>
               {!isMobile && (
@@ -1398,87 +1490,115 @@ function App() {
             ref={diffScrollContainerRef}
             className={`flex-1 overflow-y-auto ${showMobileCommentsBar ? 'pb-16' : ''}`}
           >
+            <ReviewPlanBanner
+              status={aiStatus}
+              plan={aiPlan}
+              message={aiMessage}
+              loading={aiLoading}
+              onSelectFile={scrollFileIntoDiffContainer}
+            />
             {diffData.files.map((file, fileIndex) => {
               const fileThreads = threadsByFile.get(file.path) ?? EMPTY_COMMENT_THREADS;
               const mergedChunks =
                 getMergedChunksForVersion(mergedChunksState, diffDataVersion, file.path) ??
                 EMPTY_MERGED_CHUNKS;
               const isRendered = renderedFilePaths.has(file.path);
+              const chapterHeader = chapterHeaderByPath.get(file.path);
               return (
-                <div
-                  key={file.path}
-                  id={getFileElementId(file.path)}
-                  data-file-path={file.path}
-                  data-rendered={isRendered ? 'true' : 'false'}
-                  ref={(node) => registerLazyFileContainer(file.path, node)}
-                  className="mb-6"
-                  onMouseEnter={() => {
-                    hoveredFileIndexRef.current = fileIndex;
-                  }}
-                  onMouseLeave={() => {
-                    if (hoveredFileIndexRef.current === fileIndex) {
-                      hoveredFileIndexRef.current = null;
-                    }
-                  }}
-                >
-                  {isRendered ? (
-                    <DiffViewer
-                      file={file}
-                      threads={fileThreads}
-                      showAuthorBadges={showAuthorBadges}
-                      diffMode={diffMode}
-                      reviewedFiles={viewedFiles}
-                      isChangedSinceViewed={changedSinceViewedFiles.has(file.path)}
-                      onToggleReviewed={handleViewedButtonToggle}
-                      collapsedFiles={collapsedFiles}
-                      onToggleCollapsed={toggleFileCollapsed}
-                      onToggleAllCollapsed={toggleAllFilesCollapsed}
-                      onAddComment={handleAddComment}
-                      onGenerateThreadPrompt={handleGenerateThreadPrompt}
-                      onRemoveThread={removeThread}
-                      onReplyToThread={handleReplyToThread}
-                      onRemoveMessage={removeMessage}
-                      onUpdateMessage={updateMessage}
-                      onOpenInEditor={canOpenInEditor ? handleOpenInEditor : undefined}
-                      syntaxTheme={settings.syntaxTheme}
-                      baseCommitish={diffData.baseCommitish}
-                      targetCommitish={diffData.targetCommitish}
-                      cursor={cursor?.fileIndex === fileIndex ? cursor : null}
-                      isFocused={cursor?.fileIndex === fileIndex}
-                      fileIndex={fileIndex}
-                      onLineClick={handleLineClick}
-                      commentTrigger={
-                        commentTrigger?.fileIndex === fileIndex ? commentTrigger : null
-                      }
-                      onCommentTriggerHandled={handleCommentTriggerHandled}
-                      mergedChunks={mergedChunks}
-                      expandLines={expandLines}
-                      expandAllBetweenChunks={expandAllBetweenChunks}
-                      prefetchFileContent={prefetchFileContent}
-                      isExpandLoading={isExpandLoading}
-                      diffVersion={diffDataVersion}
-                    />
-                  ) : (
-                    <div className="bg-github-bg-secondary border border-github-border rounded-md px-4 py-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="text-xs uppercase tracking-wide text-github-text-muted">
-                            Deferred Rendering
-                          </div>
-                          <div className="text-sm font-mono text-github-text-primary truncate">
-                            {file.path}
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => ensureFileRendered(file.path)}
-                          className="px-3 py-1.5 text-xs rounded border border-github-border text-github-text-secondary hover:text-github-text-primary hover:bg-github-bg-tertiary"
-                        >
-                          Load now
-                        </button>
-                      </div>
+                <div key={`wrap-${file.path}`}>
+                  {chapterHeader && (
+                    <div className="mx-4 mt-4 mb-2 flex items-baseline gap-2 border-b border-github-border pb-1">
+                      <span
+                        className="text-xs font-mono px-1.5 py-0.5 rounded"
+                        style={{ color: '#a371f7', backgroundColor: '#a371f71a' }}
+                      >
+                        {chapterHeader.index + 1}
+                      </span>
+                      <span className="text-sm font-semibold text-github-text-primary">
+                        {chapterHeader.title}
+                      </span>
+                      {chapterHeader.summary && (
+                        <span className="text-xs text-github-text-secondary truncate">
+                          {chapterHeader.summary}
+                        </span>
+                      )}
                     </div>
                   )}
+                  <div
+                    key={file.path}
+                    id={getFileElementId(file.path)}
+                    data-file-path={file.path}
+                    data-rendered={isRendered ? 'true' : 'false'}
+                    ref={(node) => registerLazyFileContainer(file.path, node)}
+                    className="mb-6"
+                    onMouseEnter={() => {
+                      hoveredFileIndexRef.current = fileIndex;
+                    }}
+                    onMouseLeave={() => {
+                      if (hoveredFileIndexRef.current === fileIndex) {
+                        hoveredFileIndexRef.current = null;
+                      }
+                    }}
+                  >
+                    {isRendered ? (
+                      <DiffViewer
+                        file={file}
+                        threads={fileThreads}
+                        showAuthorBadges={showAuthorBadges}
+                        diffMode={diffMode}
+                        reviewedFiles={viewedFiles}
+                        isChangedSinceViewed={changedSinceViewedFiles.has(file.path)}
+                        onToggleReviewed={handleViewedButtonToggle}
+                        collapsedFiles={collapsedFiles}
+                        onToggleCollapsed={toggleFileCollapsed}
+                        onToggleAllCollapsed={toggleAllFilesCollapsed}
+                        onAddComment={handleAddComment}
+                        onGenerateThreadPrompt={handleGenerateThreadPrompt}
+                        onRemoveThread={removeThread}
+                        onReplyToThread={handleReplyToThread}
+                        onRemoveMessage={removeMessage}
+                        onUpdateMessage={updateMessage}
+                        onOpenInEditor={canOpenInEditor ? handleOpenInEditor : undefined}
+                        syntaxTheme={settings.syntaxTheme}
+                        baseCommitish={diffData.baseCommitish}
+                        targetCommitish={diffData.targetCommitish}
+                        cursor={cursor?.fileIndex === fileIndex ? cursor : null}
+                        isFocused={cursor?.fileIndex === fileIndex}
+                        fileIndex={fileIndex}
+                        onLineClick={handleLineClick}
+                        commentTrigger={
+                          commentTrigger?.fileIndex === fileIndex ? commentTrigger : null
+                        }
+                        onCommentTriggerHandled={handleCommentTriggerHandled}
+                        mergedChunks={mergedChunks}
+                        expandLines={expandLines}
+                        expandAllBetweenChunks={expandAllBetweenChunks}
+                        prefetchFileContent={prefetchFileContent}
+                        isExpandLoading={isExpandLoading}
+                        diffVersion={diffDataVersion}
+                      />
+                    ) : (
+                      <div className="bg-github-bg-secondary border border-github-border rounded-md px-4 py-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-xs uppercase tracking-wide text-github-text-muted">
+                              Deferred Rendering
+                            </div>
+                            <div className="text-sm font-mono text-github-text-primary truncate">
+                              {file.path}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => ensureFileRendered(file.path)}
+                            className="px-3 py-1.5 text-xs rounded border border-github-border text-github-text-secondary hover:text-github-text-primary hover:bg-github-bg-tertiary"
+                          >
+                            Load now
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             })}

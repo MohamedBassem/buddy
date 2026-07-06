@@ -21,7 +21,7 @@ import {
   readStdin,
 } from './utils.js';
 import { createCommentCommand } from './comment.js';
-import { getPrPatch, getPrCommentImports } from './github.js';
+import { getPrPatch, getPrCommentImports, parseGitHubPrUrl } from './github.js';
 
 type SpecialArg = 'working' | 'staged' | '.';
 
@@ -305,6 +305,10 @@ program
       }
 
       if (stdinDiff) {
+        // Give the AI layer the PR identity (owner/repo/number) so its agent can
+        // query `gh api` for context beyond the patch. No head SHA is resolved
+        // here — the server fingerprints the diff content for its cache key.
+        const prInfo = options.pr ? parseGitHubPrUrl(options.pr) : null;
         // Start server with stdin diff (including --pr patch)
         const { url, port } = await startServer({
           stdinDiff,
@@ -313,6 +317,16 @@ program
           openBrowser: options.open,
           clearComments: options.clean,
           keepAlive: options.keepAlive,
+          ...(prInfo
+            ? {
+                pr: {
+                  owner: prInfo.owner,
+                  repo: prInfo.repo,
+                  number: prInfo.pullNumber,
+                  hostname: prInfo.hostname,
+                },
+              }
+            : {}),
           ...(commentImports.length > 0 ? { commentImports } : {}),
         });
 

@@ -38,11 +38,28 @@ interface CommentsChangedWatchEvent {
   timestamp: string;
 }
 
+/** Emitted when the AI prep pass has a ReviewPlan ready (or its status changed). */
+interface AiPlanWatchEvent {
+  type: 'aiPlanReady';
+  /** Head SHA the plan was produced against. */
+  headSha: string;
+  timestamp: string;
+}
+
+/** Emitted when the set of AI annotations changed (mirrors commentsChanged). */
+interface AiAnnotationsChangedWatchEvent {
+  type: 'aiAnnotationsChanged';
+  headSha: string;
+  timestamp: string;
+}
+
 export type WatchEvent =
   | ConnectedWatchEvent
   | ReloadWatchEvent
   | ErrorWatchEvent
-  | CommentsChangedWatchEvent;
+  | CommentsChangedWatchEvent
+  | AiPlanWatchEvent
+  | AiAnnotationsChangedWatchEvent;
 
 export interface ClientWatchState {
   isWatchEnabled: boolean;

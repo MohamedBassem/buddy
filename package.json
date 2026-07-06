@@ -1,35 +1,24 @@
 {
-  "name": "difit",
-  "version": "5.0.6",
-  "description": "A lightweight command-line tool that spins up a local web server to display Git commit diffs in a GitHub-like Files changed view",
+  "name": "buddy",
+  "version": "0.1.0",
+  "description": "An AI-assisted (not AI-automated) PR review tool. The AI prepares the review; the human judges and authors the comments. Forked from difit (MIT).",
   "keywords": [
+    "ai",
     "cli",
     "code-review",
     "diff",
     "diff-viewer",
     "git",
     "github",
-    "react",
-    "review",
-    "tailwind"
+    "pull-request",
+    "react"
   ],
-  "homepage": "https://github.com/yoshiko-pg/difit",
-  "bugs": {
-    "url": "https://github.com/yoshiko-pg/difit/issues"
-  },
   "license": "MIT",
-  "author": "yoshiko-pg",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/yoshiko-pg/difit.git"
-  },
   "bin": {
-    "difit": "./dist/cli/index.js"
+    "buddy": "./dist/cli/index.js"
   },
   "files": [
     "dist",
-    "!dist/client/site-data",
-    "!dist/site",
     "README.md"
   ],
   "type": "module",
@@ -39,13 +28,9 @@
   },
   "scripts": {
     "dev": "node scripts/dev.js",
-    "dev:site": "pnpm run build:cli && node scripts/export-site-data.js && vite --config vite.config.site.ts --open /",
     "dev:cli": "tsc --project tsconfig.cli.json && NODE_ENV=development node dist/cli/index.js",
     "build": "pnpm run build:cli && vite build",
-    "build:site": "pnpm run build:cli && GITHUB_PAGES=true vite build --config vite.config.site.ts",
     "build:cli": "tsc --project tsconfig.cli.json",
-    "export:site-data": "node scripts/export-site-data.js",
-    "package:vscode": "pnpm -C packages/vscode run package",
     "start": "pnpm run build && node dist/cli/index.js",
     "check": "oxlint . --type-aware --type-check --deny-warnings --report-unused-disable-directives",
     "check:fix": "oxlint . --type-aware --type-check --deny-warnings --report-unused-disable-directives --fix",
@@ -64,6 +49,7 @@
     "perf:compare": "node scripts/compare-performance.js"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.0",
     "@floating-ui/react": "^0.27.16",
     "@parcel/watcher": "^2.5.1",
     "commander": "^15.0.0",
@@ -80,7 +66,8 @@
     "react-hotkeys-hook": "^5.2.4",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
-    "simple-git": "^3.28.0"
+    "simple-git": "^3.28.0",
+    "zustand": "^5.0.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.11",

@@ -28,6 +28,8 @@ interface FileListProps {
   onToggleReviewed: (path: string) => void;
   onToggleFolderReviewed: (path: string, reviewed: boolean) => void;
   selectedFileIndex: number | null;
+  /** Paths buddy's AI classified as mechanical noise (rename-only, generated…). */
+  mechanicalFiles?: Set<string>;
 }
 
 interface TreeNode {
@@ -162,6 +164,7 @@ export const FileList = memo(function FileList({
   onToggleReviewed,
   onToggleFolderReviewed,
   selectedFileIndex,
+  mechanicalFiles,
 }: FileListProps) {
   const fileTree = useMemo(() => buildFileTree(files), [files]);
   const shouldUseStickyDirectoryHeaders = useMemo(
@@ -434,8 +437,21 @@ export const FileList = memo(function FileList({
           >
             {node.name}
           </span>
+          {mechanicalFiles?.has(file.path) && (
+            <span
+              className="text-[10px] font-medium uppercase tracking-wide px-1.5 py-0.5 rounded ml-auto shrink-0"
+              style={{ color: '#a371f7', backgroundColor: '#a371f71a' }}
+              title="buddy classified this as mechanical (rename-only, generated, or formatting) and folded it"
+            >
+              mechanical
+            </span>
+          )}
           {commentCount > 0 && (
-            <span className="text-github-warning text-sm font-medium ml-auto flex items-center gap-1">
+            <span
+              className={`text-github-warning text-sm font-medium flex items-center gap-1 ${
+                mechanicalFiles?.has(file.path) ? '' : 'ml-auto'
+              }`}
+            >
               <MessageSquare size={14} />
               {commentCount}
             </span>

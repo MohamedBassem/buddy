@@ -25,6 +25,9 @@ import {
 } from '../utils/editorOptions.js';
 import { getFileExtension } from '../utils/fileUtils.js';
 
+import { type AiRepoContext } from '../types/ai.js';
+
+import { registerAiRoutes } from './ai/routes.js';
 import { FileWatcherService } from './file-watcher.js';
 import { GitDiffParser } from './git-diff.js';
 
@@ -58,6 +61,10 @@ interface ServerOptions {
   diffMode?: DiffMode;
   repoPath?: string;
   contextLines?: number;
+  /** GitHub PR identity, when launched via --pr. Enables PR-aware AI context. */
+  pr?: AiRepoContext['pr'];
+  /** Explicit head SHA for the AI layer (e.g. the PR head); otherwise derived. */
+  headSha?: string;
 }
 
 const GENERATED_STATUS_CACHE_TTL_MS = 60_000;
@@ -199,6 +206,38 @@ export async function startServer(
     Boolean(options.stdinDiff),
   );
 
+  // --- AI review context ------------------------------------------------
+  // The AI prep pass caches by head SHA. We prefer an explicit SHA (a real PR
+  // head), and otherwise identify the diff by a content hash so the cached plan
+  // is reused for an unchanged diff and re-run when the content changes
+  // (including working-tree edits, which have no stable commit SHA).
+  function computeHeadSha(diff: DiffResponse): string {
+    if (options.headSha) {
+      return options.headSha;
+    }
+    const fingerprint = diff.files
+      .map(
+        (file) =>
+          `${file.path}\0${file.oldPath ?? ''}\0${file.status}\0${file.additions}\0${file.deletions}`,
+      )
+      .join('\n');
+    return createHash('sha256').update(fingerprint).digest('hex').slice(0, 40);
+  }
+
+  function buildAiContext(diff: DiffResponse): AiRepoContext {
+    return {
+      repoPath: repositoryPath,
+      headSha: computeHeadSha(diff),
+      ...(options.pr ? { pr: options.pr } : {}),
+    };
+  }
+
+  const { planService } = registerAiRoutes(app, {
+    context: buildAiContext(initialDiffData),
+    diff: initialDiffData,
+    broadcast: (event) => fileWatcher.broadcast(event),
+  });
+
   function parseRepositoryRelativePath(
     filepath: unknown,
   ):
@@ -329,6 +368,9 @@ export async function startServer(
       requestedSelection,
       Boolean(options.stdinDiff),
     );
+
+    // Keep the AI prep pass pointed at whatever diff the client is now viewing.
+    planService.setContext(buildAiContext(responseDiffData), responseDiffData);
 
     const baseCommitish =
       responseDiffData.baseCommitish ?? (options.stdinDiff ? 'stdin' : undefined);

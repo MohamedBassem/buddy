@@ -24,7 +24,7 @@ const cliStdoutProxy = createCliStdoutProxy({
       stdio: 'inherit',
       env: {
         ...process.env,
-        VITE_DIFIT_API_URL: cliServerUrl,
+        VITE_BUDDY_API_URL: cliServerUrl,
       },
     });
   },
