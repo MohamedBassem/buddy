@@ -293,6 +293,7 @@ pnpm run format
 ### Development Workflow
 
 - **`pnpm run dev`**: Starts both Vite dev server (with hot reload) and CLI server simultaneously
+  - Pass `--host` (e.g. `pnpm run dev . --host 0.0.0.0`) to expose the dev UI on your network — buddy binds both the Vite server and the CLI, and routes the client through the proxy so fetch and SSE work from other devices.
 - **`pnpm run start <target>`**: Builds everything and starts production server (for testing final build)
 - **Development mode**: Uses Vite's dev server for hot reload and fast development
 - **Production mode**: Serves built static files (used by npx and production builds)

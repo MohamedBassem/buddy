@@ -7,6 +7,28 @@ import { createCliStdoutProxy } from '../dev/dev-stdout.js';
 const rawArgs = process.argv.slice(2);
 const cliArgs = [...rawArgs, '--no-open'];
 
+// Detect a `--host [addr]` in the args the user passed. When present we expose
+// the Vite dev server (the actual UI) on the network too — otherwise only the
+// CLI/API server would bind the host and the page on :5173 stays localhost-only.
+// `--host 0.0.0.0` / `--host=1.2.3.4` / bare `--host` are all supported.
+// Returns: null (no --host), '' (bare → all interfaces), or the address string.
+function parseHostArg(args) {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--host') {
+      const next = args[i + 1];
+      return next && !next.startsWith('-') ? next : '';
+    }
+    if (arg.startsWith('--host=')) {
+      return arg.slice('--host='.length);
+    }
+  }
+  return null;
+}
+
+const hostArg = parseHostArg(rawArgs);
+const exposeOnNetwork = hostArg !== null;
+
 // Wait for CLI server to be ready, then start Vite
 let cliProcess = null;
 let compileProcess = null;
@@ -20,12 +42,29 @@ const cliStdoutProxy = createCliStdoutProxy({
     }
 
     console.log('🚀 Starting Vite dev server...');
-    viteProcess = spawn('pnpm', ['exec', 'vite', '--open', '--clearScreen=false'], {
+
+    const viteArgs = ['exec', 'vite', '--clearScreen=false'];
+    const viteEnv = { ...process.env };
+
+    if (exposeOnNetwork) {
+      // Bind Vite to the network too, and route the client through the Vite
+      // proxy (relative URLs) so fetch AND SSE work from other devices. We pass
+      // the CLI target via a non-VITE_ var so it never becomes an absolute
+      // localhost URL baked into the client bundle.
+      viteArgs.push('--host');
+      if (hostArg) viteArgs.push(hostArg);
+      viteEnv.BUDDY_DEV_API_TARGET = cliServerUrl;
+      delete viteEnv.VITE_BUDDY_API_URL;
+    } else {
+      // Local dev: open the browser and point the client straight at the CLI
+      // server (SSE connects directly, avoiding any proxy buffering).
+      viteArgs.push('--open');
+      viteEnv.VITE_BUDDY_API_URL = cliServerUrl;
+    }
+
+    viteProcess = spawn('pnpm', viteArgs, {
       stdio: 'inherit',
-      env: {
-        ...process.env,
-        VITE_BUDDY_API_URL: cliServerUrl,
-      },
+      env: viteEnv,
     });
   },
   onOutput: (output) => {
