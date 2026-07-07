@@ -11,6 +11,10 @@ import { getAiConfig } from './config.js';
 interface StreamTextBlock {
   type: string;
   text?: string;
+  /** Present on `tool_use` blocks: the tool the agent invoked. */
+  name?: string;
+  /** Present on `tool_use` blocks: the tool's arguments. */
+  input?: Record<string, unknown>;
 }
 interface StreamMessage {
   type: string;
@@ -49,6 +53,12 @@ export interface RunAgentParams {
   signal?: AbortSignal;
   /** Called with each assistant text chunk as it streams in (optional). */
   onText?: (text: string) => void;
+  /**
+   * Short human label for CLI logs (e.g. "review plan", "ask hunk"). When set,
+   * runAgent logs when the pass starts, each tool the agent runs, and the
+   * duration/cost on completion so operators can watch progress in the terminal.
+   */
+  label?: string;
 }
 
 interface AgentResult {
@@ -81,6 +91,12 @@ export async function runAgent(params: RunAgentParams): Promise<AgentResult> {
   let finalText = '';
   let costUsd = 0;
 
+  const label = params.label;
+  const startedAt = Date.now();
+  if (label) {
+    console.log(`🤖 [${label}] agent started (model: ${config.model})`);
+  }
+
   const stream = query({
     prompt: params.prompt,
     options,
@@ -90,6 +106,8 @@ export async function runAgent(params: RunAgentParams): Promise<AgentResult> {
       for (const block of message.message?.content ?? []) {
         if (block.type === 'text' && block.text) {
           params.onText?.(block.text);
+        } else if (label && block.type === 'tool_use' && block.name) {
+          console.log(`   ↳ [${label}] ${summarizeToolUse(block.name, block.input)}`);
         }
       }
     } else if (message.type === 'result') {
@@ -103,7 +121,35 @@ export async function runAgent(params: RunAgentParams): Promise<AgentResult> {
     }
   }
 
+  if (label) {
+    const secs = ((Date.now() - startedAt) / 1000).toFixed(1);
+    console.log(`✅ [${label}] agent finished in ${secs}s ($${costUsd.toFixed(4)})`);
+  }
+
   return { text: finalText, costUsd };
+}
+
+/** One-line, human-readable summary of a tool call for CLI logs. */
+function summarizeToolUse(name: string, input?: Record<string, unknown>): string {
+  const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+  switch (name) {
+    case 'Bash': {
+      const cmd = str(input?.command)?.replace(/\s+/g, ' ').trim();
+      return cmd ? `Bash: ${truncate(cmd, 100)}` : 'Bash';
+    }
+    case 'Read':
+      return `Read: ${str(input?.file_path) ?? '?'}`;
+    case 'Grep':
+      return `Grep: ${str(input?.pattern) ?? '?'}`;
+    case 'Glob':
+      return `Glob: ${str(input?.pattern) ?? '?'}`;
+    default:
+      return name;
+  }
+}
+
+function truncate(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
 /**

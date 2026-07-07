@@ -127,6 +127,7 @@ export class AnnotationService {
         cwd: context.repoPath,
         maxTurns: 40,
         signal: this.abortController.signal,
+        label: 'annotations',
       });
 
       this.annotations = normalizeAnnotations(raw, diff, context.headSha);

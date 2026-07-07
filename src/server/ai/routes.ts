@@ -117,6 +117,7 @@ export function registerAiRoutes(app: Express, deps: AiRoutesDeps): AiServices {
         maxTurns: 20,
         signal: abortController.signal,
         onText: (text) => res.write(text),
+        label: 'ask hunk',
       });
       finished = true;
       res.end();

@@ -137,6 +137,7 @@ export class PlanService {
         cwd: context.repoPath,
         maxTurns: 40,
         signal: this.abortController.signal,
+        label: 'review plan',
       });
 
       const plan = normalizeReviewPlan(raw, changedPaths(diff), context.headSha);
