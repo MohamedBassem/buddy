@@ -21,7 +21,7 @@ import {
   readStdin,
 } from './utils.js';
 import { createCommentCommand } from './comment.js';
-import { getPrPatch, getPrCommentImports, parseGitHubPrUrl } from './github.js';
+import { getPrPatch, getPrCommentImports, getPrRefs, parseGitHubPrUrl } from './github.js';
 
 type SpecialArg = 'working' | 'staged' | '.';
 
@@ -309,6 +309,19 @@ program
         // query `gh api` for context beyond the patch. No head SHA is resolved
         // here — the server fingerprints the diff content for its cache key.
         const prInfo = options.pr ? parseGitHubPrUrl(options.pr) : null;
+        // Resolve the PR's base/head SHAs so context-line expansion can pull
+        // surrounding file content from GitHub. Non-fatal: on failure expansion
+        // stays disabled, but the review still opens.
+        let prRefs: { baseSha: string; headSha: string } | undefined;
+        if (prInfo && options.pr) {
+          try {
+            prRefs = getPrRefs(options.pr);
+          } catch (error) {
+            console.warn(
+              `Warning: could not resolve PR commits for line expansion: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            );
+          }
+        }
         // Start server with stdin diff (including --pr patch)
         const { url, port } = await startServer({
           stdinDiff,
@@ -325,6 +338,7 @@ program
                   number: prInfo.pullNumber,
                   hostname: prInfo.hostname,
                 },
+                ...(prRefs ? { prRefs } : {}),
               }
             : {}),
           ...(commentImports.length > 0 ? { commentImports } : {}),

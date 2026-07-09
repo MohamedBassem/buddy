@@ -343,6 +343,64 @@ export function getPrPatch(prArg: string): string {
   }
 }
 
+/** Runs `gh <args>` and returns stdout as a string. Injectable for tests. */
+export type GhRunner = (args: string[]) => string;
+
+const defaultGhRunner: GhRunner = (args) =>
+  execFileSync('gh', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+
+/**
+ * Resolve the base and head SHAs of a PR for context-line expansion.
+ *
+ * `head` is the PR head commit. `base` is the *merge-base* of base and head, not
+ * the base branch tip: `gh pr diff` produces a three-dot diff, so the patch's
+ * old-side line numbers reference the merge-base. Falls back to the base branch
+ * tip if the compare call fails. Throws only if the PR itself can't be resolved.
+ */
+export function getPrRefs(
+  prArg: string,
+  run: GhRunner = defaultGhRunner,
+): { baseSha: string; headSha: string } {
+  const pullRequestInfo = parseGitHubPrUrl(prArg);
+  if (!pullRequestInfo) {
+    throw new Error('Invalid GitHub PR URL');
+  }
+  const { owner, repo, pullNumber, hostname } = pullRequestInfo;
+
+  const prJson = run([
+    'api',
+    '--hostname',
+    hostname,
+    `repos/${owner}/${repo}/pulls/${pullNumber}`,
+    '--jq',
+    '{base: .base.sha, head: .head.sha}',
+  ]);
+  const { base, head } = JSON.parse(prJson) as { base?: string; head?: string };
+  if (!base || !head) {
+    throw new Error('PR response missing base/head SHA');
+  }
+
+  let baseSha = base;
+  try {
+    const mergeBase = run([
+      'api',
+      '--hostname',
+      hostname,
+      `repos/${owner}/${repo}/compare/${base}...${head}`,
+      '--jq',
+      '.merge_base_commit.sha',
+    ]).trim();
+    if (mergeBase) {
+      baseSha = mergeBase;
+    }
+  } catch {
+    // Base branch hasn't moved past the merge-base in most PRs; the tip is a
+    // safe fallback and expansion degrades gracefully if it has.
+  }
+
+  return { baseSha, headSha: head };
+}
+
 export function parsePrCommentImportsResponse(
   response: GitHubReviewThreadsGraphqlResponse,
 ): PrCommentImportsPage {

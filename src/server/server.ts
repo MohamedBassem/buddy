@@ -30,6 +30,7 @@ import { type AiRepoContext } from '../types/ai.js';
 import { registerAiRoutes } from './ai/routes.js';
 import { FileWatcherService } from './file-watcher.js';
 import { GitDiffParser } from './git-diff.js';
+import { fetchGitHubBlob, countBufferLines } from './github-blob.js';
 import { registerGitHubRoutes } from './github-routes.js';
 
 import {
@@ -64,6 +65,13 @@ interface ServerOptions {
   contextLines?: number;
   /** GitHub PR identity, when launched via --pr. Enables PR-aware AI context. */
   pr?: AiRepoContext['pr'];
+  /**
+   * Resolved base (merge-base) and head SHAs of the PR under review. Present only
+   * in --pr mode when they could be resolved via `gh api`. Lets context-line
+   * expansion fetch surrounding file content from GitHub, since the stdin patch
+   * has no local blobs. Without them, expansion stays disabled (endpoints 404).
+   */
+  prRefs?: { baseSha: string; headSha: string };
   /** Explicit head SHA for the AI layer (e.g. the PR head); otherwise derived. */
   headSha?: string;
 }
@@ -179,6 +187,14 @@ export async function startServer(
   if (options.stdinDiff) {
     // Parse stdin diff directly
     initialDiffData = parser.parseStdinDiff(options.stdinDiff);
+    // In --pr mode, surface the resolved PR base/head SHAs as the diff's
+    // commitishes (instead of the 'stdin' sentinel) so the client requests
+    // context-expansion blobs against real refs that /api/blob can fetch from
+    // GitHub. The base is the merge-base, matching `gh pr diff`'s old-side lines.
+    if (options.pr && options.prRefs) {
+      initialDiffData.baseCommitish = options.prRefs.baseSha;
+      initialDiffData.targetCommitish = options.prRefs.headSha;
+    }
   } else {
     initialDiffData = await parser.parseDiff(
       initialSelection,
@@ -478,9 +494,14 @@ export async function startServer(
     }
   });
 
+  // In --pr mode the diff is a stdin patch with no local blobs; context-line
+  // expansion instead reads file content from GitHub via `gh api`. Null in every
+  // other mode (local git serves blobs, plain stdin has no source).
+  const prBlobSource = options.stdinDiff && options.pr ? options.pr : null;
+
   app.get(/^\/api\/line-count\/(.*)$/, async (req, res) => {
     try {
-      if (options.stdinDiff) {
+      if (options.stdinDiff && !prBlobSource) {
         res.status(404).json({ error: 'Line count not available for stdin diff' });
         return;
       }
@@ -502,18 +523,23 @@ export async function startServer(
       const newRef = req.query.newRef as string | undefined;
       const oldPath = oldPathResult.path;
 
+      const lineCountAt = (path: string, ref: string): Promise<number> =>
+        prBlobSource
+          ? fetchGitHubBlob(prBlobSource, path, ref).then(countBufferLines)
+          : parser.getLineCount(path, ref);
+
       const result: { oldLineCount?: number; newLineCount?: number } = {};
 
       if (oldRef) {
         try {
-          result.oldLineCount = await parser.getLineCount(oldPath, oldRef);
+          result.oldLineCount = await lineCountAt(oldPath, oldRef);
         } catch {
           result.oldLineCount = 0;
         }
       }
       if (newRef) {
         try {
-          result.newLineCount = await parser.getLineCount(filepath, newRef);
+          result.newLineCount = await lineCountAt(filepath, newRef);
         } catch {
           result.newLineCount = 0;
         }
@@ -528,8 +554,8 @@ export async function startServer(
 
   app.get(/^\/api\/blob\/(.*)$/, async (req, res) => {
     try {
-      // If using stdin diff, blob content is not available
-      if (options.stdinDiff) {
+      // Plain stdin diff has no blob source; --pr mode fetches from GitHub.
+      if (options.stdinDiff && !prBlobSource) {
         res.status(404).json({ error: 'Blob content not available for stdin diff' });
         return;
       }
@@ -542,7 +568,9 @@ export async function startServer(
       const filepath = filepathResult.path;
       const ref = (req.query.ref as string) || 'HEAD';
 
-      const blob = await parser.getBlobContent(filepath, ref);
+      const blob = prBlobSource
+        ? await fetchGitHubBlob(prBlobSource, filepath, ref)
+        : await parser.getBlobContent(filepath, ref);
 
       // Determine content type based on file extension
       const ext = getFileExtension(filepath);

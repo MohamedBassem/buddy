@@ -94,6 +94,14 @@ vi.mock('./git-diff.js', () => {
   return { GitDiffParser: GitDiffParserMock };
 });
 
+// Mock the GitHub blob fetcher (shells out to `gh`) so --pr expansion is testable
+// without network/auth. countBufferLines stays real.
+const { fetchGitHubBlobMock } = vi.hoisted(() => ({ fetchGitHubBlobMock: vi.fn() }));
+vi.mock('./github-blob.js', async () => {
+  const actual = await vi.importActual<typeof import('./github-blob.js')>('./github-blob.js');
+  return { ...actual, fetchGitHubBlob: fetchGitHubBlobMock };
+});
+
 describe('Server Integration Tests', () => {
   describe('Comments API', () => {
     it('should accept properly formatted comments', async () => {
@@ -1393,6 +1401,84 @@ describe('Server Integration Tests', () => {
 
       expect(response.status).toBe(400);
       expect(data).toHaveProperty('error', 'File path outside repository');
+    });
+  });
+
+  describe('PR mode context expansion', () => {
+    const pr = { owner: 'acme', repo: 'widget', number: 7, hostname: 'github.com' };
+    const prRefs = { baseSha: 'basesha1', headSha: 'headsha2' };
+
+    beforeEach(() => {
+      fetchGitHubBlobMock.mockReset();
+    });
+
+    it('GET /api/diff surfaces the resolved PR base/head SHAs as commitishes', async () => {
+      const prServer = await startServer({
+        stdinDiff: 'diff --git a/stdin-test.js b/stdin-test.js',
+        preferredPort: 9200,
+        pr,
+        prRefs,
+      });
+      servers.push(prServer.server);
+
+      const data = (await (
+        await fetch(`http://localhost:${prServer.port}/api/diff`)
+      ).json()) as any;
+      expect(data.baseCommitish).toBe('basesha1');
+      expect(data.targetCommitish).toBe('headsha2');
+    });
+
+    it('GET /api/blob/* fetches file content from GitHub in --pr mode', async () => {
+      fetchGitHubBlobMock.mockResolvedValue(Buffer.from('const a = 1;\n'));
+      const prServer = await startServer({
+        stdinDiff: 'diff --git a/stdin-test.js b/stdin-test.js',
+        preferredPort: 9201,
+        pr,
+        prRefs,
+      });
+      servers.push(prServer.server);
+
+      const response = await fetch(
+        `http://localhost:${prServer.port}/api/blob/src%2Fapp.js?ref=headsha2`,
+      );
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe('const a = 1;\n');
+      expect(fetchGitHubBlobMock).toHaveBeenCalledWith(
+        expect.objectContaining({ owner: 'acme', repo: 'widget' }),
+        'src/app.js',
+        'headsha2',
+      );
+    });
+
+    it('GET /api/line-count/* counts GitHub blob lines in --pr mode', async () => {
+      fetchGitHubBlobMock.mockResolvedValue(Buffer.from('a\nb\nc\n'));
+      const prServer = await startServer({
+        stdinDiff: 'diff --git a/stdin-test.js b/stdin-test.js',
+        preferredPort: 9202,
+        pr,
+        prRefs,
+      });
+      servers.push(prServer.server);
+
+      const data = (await (
+        await fetch(
+          `http://localhost:${prServer.port}/api/line-count/src%2Fapp.js?oldRef=basesha1&newRef=headsha2`,
+        )
+      ).json()) as any;
+      expect(data.oldLineCount).toBe(3);
+      expect(data.newLineCount).toBe(3);
+    });
+
+    it('GET /api/blob/* still 404s for a plain stdin diff (no PR)', async () => {
+      const stdinServer = await startServer({
+        stdinDiff: 'diff --git a/stdin-test.js b/stdin-test.js',
+        preferredPort: 9203,
+      });
+      servers.push(stdinServer.server);
+
+      const response = await fetch(`http://localhost:${stdinServer.port}/api/blob/app.js?ref=HEAD`);
+      expect(response.status).toBe(404);
+      expect(fetchGitHubBlobMock).not.toHaveBeenCalled();
     });
   });
 

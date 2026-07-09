@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { parseGitHubPrUrl, parsePrCommentImportsResponse } from './github';
+import { getPrRefs, parseGitHubPrUrl, parsePrCommentImportsResponse } from './github';
 
 function createReviewComment(overrides: Record<string, unknown> = {}) {
   return {
@@ -369,6 +369,67 @@ describe('CLI GitHub utils', () => {
       expect(parseGitHubPrUrl('https://github.com')).toBe(null);
       expect(parseGitHubPrUrl('https://github.com/owner')).toBe(null);
       expect(parseGitHubPrUrl('https://github.com/owner/repo/pull')).toBe(null);
+    });
+  });
+
+  describe('getPrRefs', () => {
+    it('resolves head SHA and the merge-base as the base SHA', () => {
+      const run = vi.fn((args: string[]) => {
+        const endpoint = args[3] ?? '';
+        if (endpoint.startsWith('repos/owner/repo/pulls/')) {
+          return JSON.stringify({ base: 'baseTip', head: 'headSha' });
+        }
+        if (endpoint.startsWith('repos/owner/repo/compare/')) {
+          return 'mergeBaseSha\n';
+        }
+        throw new Error(`unexpected endpoint ${endpoint}`);
+      });
+
+      const refs = getPrRefs('https://github.com/owner/repo/pull/42', run);
+      expect(refs).toEqual({ baseSha: 'mergeBaseSha', headSha: 'headSha' });
+      // Compare is requested against the base branch tip, not the merge-base.
+      expect(run.mock.calls[1]?.[0]).toContain('repos/owner/repo/compare/baseTip...headSha');
+    });
+
+    it('falls back to the base branch tip when the compare call fails', () => {
+      const run = vi.fn((args: string[]) => {
+        const endpoint = args[3] ?? '';
+        if (endpoint.startsWith('repos/owner/repo/pulls/')) {
+          return JSON.stringify({ base: 'baseTip', head: 'headSha' });
+        }
+        throw new Error('compare failed');
+      });
+
+      const refs = getPrRefs('https://github.com/owner/repo/pull/42', run);
+      expect(refs).toEqual({ baseSha: 'baseTip', headSha: 'headSha' });
+    });
+
+    it('passes the enterprise hostname to gh', () => {
+      const run = vi.fn((args: string[]) => {
+        const endpoint = args[3] ?? '';
+        if (endpoint.startsWith('repos/team/project/pulls/')) {
+          return JSON.stringify({ base: 'b', head: 'h' });
+        }
+        return 'mb';
+      });
+
+      getPrRefs('https://git.company.io/team/project/pull/9', run);
+      expect(run.mock.calls[0]?.[0]).toEqual(
+        expect.arrayContaining(['--hostname', 'git.company.io']),
+      );
+    });
+
+    it('throws when the PR response is missing SHAs', () => {
+      const run = vi.fn(() => JSON.stringify({}));
+      expect(() => getPrRefs('https://github.com/owner/repo/pull/42', run)).toThrow(
+        /missing base\/head SHA/,
+      );
+    });
+
+    it('throws for an invalid PR URL', () => {
+      const run = vi.fn();
+      expect(() => getPrRefs('not-a-url', run)).toThrow(/Invalid GitHub PR URL/);
+      expect(run).not.toHaveBeenCalled();
     });
   });
 });
